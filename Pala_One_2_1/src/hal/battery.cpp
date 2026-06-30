@@ -133,7 +133,8 @@ void updateBatteryBackground()
   }
 }
 
-void updateBatteryCached(bool force) {
+void updateBatteryCached(bool force)
+{
   uint32_t now = millis();
   bool needFull = force || (now - s_battery.lastMs) >= BAT_CACHE_MS;
   bool chargingCheckDue = force || (now - s_battery.lastChargingCheckMs) >= BAT_CHARGING_CHECK_MS;
@@ -312,15 +313,18 @@ void drawBattery(int xIcon, int yIcon)
 
 }
 
-void drawBatteryTopRight() {
+void drawBatteryTopRight()
+{
 	drawBattery(/*xIcon=*/SCREEN_W - MARGIN_X - iconW - 2, /*yIcon=*/2);
 }
 
-void drawBatteryBottomLeft() {
+void drawBatteryBottomLeft()
+{
 	drawBattery(/*xIcon=*/MARGIN_X + 2, /*yIcon=*/SCREEN_H - iconH);
 }
 
-bool batteryLow() {
+bool batteryLow()
+{
   return s_battery.valid && s_battery.low;
 }
 
