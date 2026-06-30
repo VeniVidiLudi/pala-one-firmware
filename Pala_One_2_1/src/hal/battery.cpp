@@ -124,8 +124,16 @@ static int batteryPercentFromOCV(float v)
   return 0;
 }
 
-void updateBatteryCached(bool force)
+void updateBatteryBackground()
 {
+  uint32_t now = millis();
+  bool needFull = (now - s_battery.lastMs) >= BAT_CACHE_MS;
+  if (needFull) {
+    updateBatteryCached(/*force=*/true);
+  }
+}
+
+void updateBatteryCached(bool force) {
   uint32_t now = millis();
   bool needFull = force || (now - s_battery.lastMs) >= BAT_CACHE_MS;
   bool chargingCheckDue = force || (now - s_battery.lastChargingCheckMs) >= BAT_CHARGING_CHECK_MS;
@@ -260,7 +268,10 @@ void drawBolt(int battX, int battY, int battH, int spacing)
   }
 }
 
-void drawBatteryTopRight()
+const int iconW = 18;
+const int iconH = 9;
+
+void drawBattery(int xIcon, int yIcon)
 {
   updateBatteryCached(false);
 
@@ -269,11 +280,6 @@ void drawBatteryTopRight()
     pct = 0;
   if (pct > 100)
     pct = 100;
-
-  const int iconW = 18;
-  const int iconH = 9;
-  int xIcon = SCREEN_W - MARGIN_X - iconW - 2;
-  int yIcon = 2;
 
   drawBatteryOutline(xIcon, yIcon, iconW, iconH);
   int displayedCharge = 0;
@@ -304,6 +310,18 @@ void drawBatteryTopRight()
     drawChargingFill(xIcon, yIcon, iconH, iconW);
   }
 
+}
+
+void drawBatteryTopRight() {
+	drawBattery(/*xIcon=*/SCREEN_W - MARGIN_X - iconW - 2, /*yIcon=*/2);
+}
+
+void drawBatteryBottomLeft() {
+	drawBattery(/*xIcon=*/MARGIN_X + 2, /*yIcon=*/SCREEN_H - iconH);
+}
+
+bool batteryLow() {
+  return s_battery.valid && s_battery.low;
 }
 
 // void drawBatteryTopRight()
