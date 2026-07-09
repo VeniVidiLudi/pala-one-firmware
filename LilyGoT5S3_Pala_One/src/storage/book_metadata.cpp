@@ -68,9 +68,20 @@ void renameBookMetadata(KeyValueStore& kv, const String& oldKey, const String& n
 // ============================================================================
 //  Firmware glue
 // ============================================================================
+#include "src/storage/fs_util.h"           // removeTreeRecursive — EPUB image dir cleanup
 #include "src/storage/library.h"           // g_library (bulk invalidation iterates books)
 #include "src/storage/page_cache.h"        // deletePageCacheForBook / renamePageCacheForBook
 #include "src/storage/preferences_store.h"
+
+// Sibling directory holding a book's extracted EPUB images, mirroring the
+// derivation in epub_import.cpp's orchestrator: "<book>.txt" -> "<book>.imgs".
+// Only EPUBs imported with image retention have one; for any other book this
+// yields a path that simply doesn't exist (removeTreeRecursive no-ops on it).
+static String imgDirForBook(const String& path) {
+  String d = path;
+  if (d.endsWith(".txt")) d = d.substring(0, d.length() - 4);
+  return d + ".imgs";
+}
 
 uint8_t loadBookmarksForKey(const String& bookKey,
                             uint16_t outPages[MAX_BOOKMARKS],
@@ -107,11 +118,19 @@ void deleteBookMetadata(const String& path) {
   PreferencesStore kv(prefs);
   clearBookMetadata(kv, prefKeyForBook(path));   // NVS: progress + bookmarks
   deletePageCacheForBook(path);                  // disk: pc_<hash>.bin
+  removeTreeRecursive(imgDirForBook(path));      // disk: <book>.imgs/ (EPUB images)
 }
 
 void migrateBookMetadata(const String& oldPath, const String& newPath) {
   PreferencesStore kv(prefs);
   renameBookMetadata(kv, prefKeyForBook(oldPath), prefKeyForBook(newPath));
   renamePageCacheForBook(oldPath, newPath);
+  // For now we DO NOT move the ".<book>.imgs" dir alongside the book. The
+  // flattened .txt embeds ABSOLUTE paths to the extracted JPEGs (see
+  // epub_import.cpp), so the images must stay where they were written or the
+  // reader can't find them. Trade-off: moving a book and later
+  // deleting it leaves the original .imgs behind (a storage leak, not a
+  // correctness bug) — it's hidden from the library and reclaimed by a
+  // factory reset / wipeFilesystem() or by manual cleanup of the SD.
 }
 #endif  // ARDUINO

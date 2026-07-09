@@ -27,8 +27,9 @@ String successPage(const String& title, const String& subtitle,
 // HTML-escape user-supplied text so we don't break the page or open XSS.
 String htmlEscape(const String& in);
 
-// "1.4 KB" / "23.7 MB" formatting for storage stats.
-String humanBytes(size_t bytes);
+// "1.4 KB" / "23.7 MB" / "29.7 GB" formatting for storage stats. Takes a
+// uint64_t so multi-GB cards aren't truncated by a 32-bit size_t.
+String humanBytes(uint64_t bytes);
 
 // Used + free + total + percent-used storage card. Title is the card heading
 // (defaults to the language-appropriate "Storage" string).

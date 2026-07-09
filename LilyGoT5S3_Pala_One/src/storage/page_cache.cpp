@@ -39,15 +39,16 @@ static constexpr size_t kHeaderBytes =
 // Compact encoding of "what layout were the offsets in this file computed
 // under?" — bodySize ∈ {8,10,12,14} and lineGap ∈ [0,4] get a byte each.
 // Third byte really packs in the small fields: family ∈ {0,1} gets 2 bits to allow for
-// growth; and, bionic ∈ {0,1} and halfGaps ∈ {0,1} get a bit each.
+// growth; and, bionic ∈ {0,1}, halfGaps ∈ {0,1}, and orient ∈ {0,1} get a bit each.
 // statusbarReserve in pixels (currently 0/1/STATUS_H) gets to stretch out in the top byte.
-// Bits 20-23 are currently spare.
+// Bits 21-23 are currently spare.
 static uint32_t encodeLayoutVersion(const PageCacheLayout& layout) {
   return ((uint32_t)(layout.bodySize         & 0x0F))
        | ((uint32_t)(layout.lineGap          & 0x0F) << 8)
        | ((uint32_t)(layout.family           & 0x03) << 16)
        | ((uint32_t)(layout.bionic           & 0x01) << 18)
-       | ((uint32_t)(layout.bionic           & 0x01) << 19)
+       | ((uint32_t)(layout.halfGaps         & 0x01) << 19)
+       | ((uint32_t)(layout.orient           & 0x01) << 20)
        | ((uint32_t)(layout.statusbarReserve & 0x0F) << 24);
 }
 

@@ -2,17 +2,23 @@
 #define PALA_UI_SCREENSAVERS_H
 
 #include "src/pure/arduino_compat.h"  // uint8_t, size_t
+#include "src/config.h"
 
 // ============================================================================
 //  Multi-screensaver module — owns the rotation of 1-bit XBM images shown
 //  on the e-ink before deep sleep.
 //
 //  Storage:
-//    /screensavers/0.bin … /screensavers/7.bin    rotation slots (3904 bytes each)
+//    /screensavers/0.bin … /screensavers/7.bin    rotation slots
 //    /sleep.bin                                   legacy single image (kept as fallback)
 //
-//  Each slot file is exactly SCREENSAVER_BYTES (250x122 px, 1-bit, LSB-first,
-//  32 bytes per row — same XBitmap format the e-ink driver consumes).
+//  Each slot file is exactly SCREENSAVER_BYTES — a full-panel 1-bit XBM
+//  (SCREENSAVER_W x SCREENSAVER_H, LSB-first, each row padded up to a whole
+//  byte), the same format Adafruit_GFX::drawXBitmap consumes: 68 bytes/row
+//  x 960 rows = 65280 bytes (the Heltec baseline panel is 250x122 = 3904).
+//  The slot format is FIXED portrait — orientation became a runtime setting,
+//  but stored images can't rotate with it, so sleep.cpp forces portrait
+//  around the whole sleep-screen composition instead.
 //
 //  Mode (NVS key `cfg_ss_mode`):
 //    Single   draw /sleep.bin if present; otherwise yield to the built-in icon
@@ -26,7 +32,16 @@
 namespace Screensavers {
 
 constexpr int MAX_SLOTS         = 8;
-constexpr int SCREENSAVER_BYTES = 3904;   // 250 * 122 / 8, 1-bit packed
+
+// Full-panel 1-bit XBM geometry. Literal portrait panel dims — NOT
+// SCREEN_W/H, which are runtime-orientation dependent: slot files are a
+// fixed on-disk format (and constexpr needs compile-time values anyway).
+// Rows are padded up to a whole byte, exactly as Adafruit_GFX::drawXBitmap
+// reads them (byteWidth = (w + 7) / 8).
+constexpr int SCREENSAVER_W     = 540;
+constexpr int SCREENSAVER_H     = 960;
+constexpr int SCREENSAVER_ROW   = (SCREENSAVER_W + 7) / 8;  // 68 bytes/row
+constexpr int SCREENSAVER_BYTES = SCREENSAVER_ROW * SCREENSAVER_H;  // 65280
 
 enum class Mode : uint8_t { Single = 0, Cycle = 1, Shuffle = 2 };
 

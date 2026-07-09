@@ -2,7 +2,9 @@
 
 #include "src/hal/display.h"            // u8g2
 #include "src/pure/bookmarks_codec.h"   // kOffsetUnset
+#include "src/storage/epub_import.h"    // EPUB_IMG_SENTINEL
 #include "src/storage/page_cache.h"     // on-disk page-offset cache
+#include "src/ui/epub_image.h"          // drawEpubImagePage / image-page flag
 #include "src/ui/font.h"                // Font::useBody / bodyLayout / measureBionicLine / layoutForCache
 
 // Measure-width adapter for the paginator. Routes through Font::measureBionicLine
@@ -25,10 +27,18 @@ uint32_t drawPageAt(File& f, uint32_t startPos) {
   const LayoutMetrics& m = Font::bodyLayout();
   Font::useBody();
 
+  epubResetPageImageFlag();
   int cursorY = TOP_PAD + m.ascent;
   auto onLine = [&](const char* buf, size_t /*len*/) {
     // nullptr indicates a paragraph break. Advance by gap height.
     if (buf == nullptr) { cursorY += m.paragraphGapH; return; }
+    // An image page is a single line prefixed with EPUB_IMG_SENTINEL; the rest
+    // is the SD path. Hand it to the JPEG decoder, which paints full-screen and
+    // flags the page so the caller drops the status bar.
+    if ((unsigned char)buf[0] == EPUB_IMG_SENTINEL) {
+      drawEpubImagePage(buf + 1);
+      return;
+    }
     // drawBionicLine sets the active u8g2 font back to Body before returning,
     // so the next line measurement (via bodyMeasure) is consistent.
     Font::drawBionicLine(MARGIN_X, cursorY, buf);
@@ -46,6 +56,9 @@ uint32_t extractPageText(File& f, uint32_t startPos, String& out) {
   auto onLine = [&](const char* buf, size_t len) {
     // nullptr indicates paragraph break.
     if (buf == nullptr) { out.concat('\n'); return; }
+    // Image page: emit a readable placeholder rather than the raw sentinel +
+    // SD path (which would be meaningless to a web "read as text" viewer).
+    if ((unsigned char)buf[0] == EPUB_IMG_SENTINEL) { out.concat("[image]\n"); return; }
     // Trim leading whitespace (paginator already trims trailing).
     const char* start = buf;
     size_t remaining = len;

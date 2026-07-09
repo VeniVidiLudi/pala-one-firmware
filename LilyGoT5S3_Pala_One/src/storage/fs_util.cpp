@@ -1,27 +1,20 @@
 #include "src/storage/fs_util.h"
 
 bool fsBegin() {
-  // First try to mount without formatting — protects existing data.
-  if (FS.begin(false)) return true;
-
-  // Mount failed. This happens on a brand-new device where the LittleFS
-  // partition has never been formatted. Format once, then mount.
-  // If the partition already had data but is now corrupt, this wipes it —
-  // which is the correct recovery action (same as factory reset).
-  Serial.println("[FS] Mount failed — formatting LittleFS...");
-  if (!FS.format()) {
-    Serial.println("[FS] Format failed.");
-    return false;
-  }
-  Serial.println("[FS] Format OK, mounting...");
-  return FS.begin(false);
+  // microSD, not LittleFS — there's no in-firmware reformat path (unlike a
+  // raw flash partition, the card normally arrives pre-formatted FAT32, and we
+  // can't safely just reformat on failed mount. A failed mount here almost
+  // always means "no card" or "not FAT32" —
+  // surfaced to the user as a storage error.
+  sdSpi.begin(SD_SCLK, SD_MISO, SD_MOSI, SD_CS);
+  return FS.begin(SD_CS, sdSpi);
 }
 
-size_t fsTotalBytesSafe() { return FS.totalBytes(); }
-size_t fsUsedBytesSafe()  { return FS.usedBytes(); }
-size_t fsFreeBytesSafe() {
-  size_t total = fsTotalBytesSafe();
-  size_t used = fsUsedBytesSafe();
+uint64_t fsTotalBytesSafe() { return FS.totalBytes(); }
+uint64_t fsUsedBytesSafe()  { return FS.usedBytes(); }
+uint64_t fsFreeBytesSafe() {
+  uint64_t total = fsTotalBytesSafe();
+  uint64_t used = fsUsedBytesSafe();
   return (total >= used) ? (total - used) : 0;
 }
 
@@ -54,4 +47,59 @@ bool isDirEmpty(const String& path) {
   if (f) f.close();
   dir.close();
   return empty;
+}
+
+void removeTreeRecursive(const String& path) {
+  if (path.length() == 0 || path == "/") return;
+  if (!FS.exists(path)) return;
+
+  File entry = FS.open(path);
+  if (!entry) return;
+
+  if (!entry.isDirectory()) {
+    entry.close();
+    FS.remove(path);
+    return;
+  }
+
+  // Collect child names first, then act — deleting while an openNextFile()
+  // iterator is live is not reliable across SD/FAT.
+  for (;;) {
+    File child = entry.openNextFile();
+    if (!child) break;
+    // child.name() may be a bare leaf or a full path depending on core
+    // version; normalise to an absolute path under `path`.
+    String cn = child.name();
+    bool isDir = child.isDirectory();
+    child.close();
+    int slash = cn.lastIndexOf('/');
+    if (slash >= 0) cn = cn.substring(slash + 1);
+    String full = path + "/" + cn;
+    if (isDir) removeTreeRecursive(full);
+    else       FS.remove(full);
+  }
+  entry.close();
+  FS.rmdir(path);
+}
+
+void wipeFilesystem() {
+  // SDFS has no format(); emulate it by removing every top-level entry.
+  File root = FS.open("/");
+  if (root) {
+    for (;;) {
+      File child = root.openNextFile();
+      if (!child) break;
+      String cn = child.name();
+      bool isDir = child.isDirectory();
+      child.close();
+      int slash = cn.lastIndexOf('/');
+      if (slash >= 0) cn = cn.substring(slash + 1);
+      if (cn.length() == 0) continue;
+      String full = "/" + cn;
+      if (isDir) removeTreeRecursive(full);
+      else       FS.remove(full);
+    }
+    root.close();
+  }
+  ensureBooksDir();
 }

@@ -188,27 +188,31 @@ String htmlEscape(const String& in) {
   return out;
 }
 
-String humanBytes(size_t bytes) {
-  if (bytes < 1024) return String(bytes) + " B";
-  if (bytes < (1024UL * 1024UL)) return String(bytes / 1024.0f, 1) + " KB";
-  return String(bytes / 1024.0f / 1024.0f, 2) + " MB";
+String humanBytes(uint64_t bytes) {
+  const uint64_t KB = 1024ULL;
+  const uint64_t MB = KB * 1024ULL;
+  const uint64_t GB = MB * 1024ULL;
+  if (bytes < KB) return String((uint32_t)bytes) + " B";
+  if (bytes < MB) return String(bytes / 1024.0f, 1) + " KB";
+  if (bytes < GB) return String(bytes / (float)MB, 2) + " MB";
+  return String(bytes / (float)GB, 2) + " GB";
 }
 
 int storageUsedPct() {
-  size_t totalBytes = fsTotalBytesSafe();
-  size_t usedBytes  = fsUsedBytesSafe();
+  uint64_t totalBytes = fsTotalBytesSafe();
+  uint64_t usedBytes  = fsUsedBytesSafe();
   if (totalBytes == 0) return 0;
-  int pct = (int)((usedBytes * 100UL) / totalBytes);
+  int pct = (int)((usedBytes * 100ULL) / totalBytes);
   if (pct < 0)   pct = 0;
   if (pct > 100) pct = 100;
   return pct;
 }
 
 String storageCardHtml(const char* title) {
-  size_t totalBytes = fsTotalBytesSafe();
-  size_t usedBytes  = fsUsedBytesSafe();
-  size_t freeBytes  = fsFreeBytesSafe();
-  int    pct        = storageUsedPct();
+  uint64_t totalBytes = fsTotalBytesSafe();
+  uint64_t usedBytes  = fsUsedBytesSafe();
+  uint64_t freeBytes  = fsFreeBytesSafe();
+  int      pct        = storageUsedPct();
 
   String out;
   out.reserve(900);

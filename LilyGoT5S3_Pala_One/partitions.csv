@@ -1,6 +1,11 @@
+# 16MB flash layout for LilyGo T5 4.7" S3 (ESP32-S3-WROOM-1-N16R8).
+# Books/library/page-cache/etc. all live on the SD card (FS == SD, see
+# state.h) — no spiffs/littlefs data partition needed, unlike the Heltec
+# table this was forked from. OTA self-update (hal/ota.cpp) needs the
+# dual ota_0/ota_1 app slots below; ~10MB of the 16MB chip is intentionally
+# left unpartitioned headroom.
 # Name,     Type, SubType, Offset,   Size,     Flags
 nvs,        data, nvs,     0x9000,   0x5000,
 otadata,    data, ota,     0xE000,   0x2000,
-ota_0,      app,  ota_0,   0x10000,  0x1D0000,
-ota_1,      app,  ota_1,   0x1E0000, 0x1D0000,
-spiffs,     data, spiffs,  0x3B0000, 0x450000,
+ota_0,      app,  ota_0,   0x10000,  0x250000,
+ota_1,      app,  ota_1,   0x260000, 0x250000,

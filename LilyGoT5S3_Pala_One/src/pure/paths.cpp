@@ -100,6 +100,15 @@ String sanitizeUploadedFilename(String fname) {
 
   clean.replace("..", "");
   while (clean.startsWith(".")) clean.remove(0, 1);
+
+  String lower = clean; lower.toLowerCase();
+  if (lower.endsWith(".epub")) {
+    // Keep the .epub extension instead of forcing .txt below — the upload
+    // handler stores it verbatim and converts it to .txt afterwards (see
+    // web/upload.cpp's bookIsEpub path).
+    if (clean.length() == 5) clean = "book.epub";  // was just ".epub"
+    return clean;
+  }
   if (!clean.endsWith(".txt")) clean += ".txt";
   if (clean.length() == 0) clean = "book.txt";
   return clean;

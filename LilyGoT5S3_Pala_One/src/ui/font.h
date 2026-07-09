@@ -16,16 +16,18 @@
 //    Toast         Helvetica regular 8 — Latin Extended (accent-capable);
 //                  used for toast text where translated strings may carry
 //                  á é í ó ú ñ ¿ ¡ ü.
-//    UiSmall       Fixed 6x10 (ASCII only). Battery percentage — digits/% only.
-//    UiTiny        Fixed 5x8  (ASCII only). Page number in the status bar.
+//    Status        Helvetica regular 12 (Latin Extended). The status-bar
+//                  page number. Sized to match the LilyGo 2.1 look (helvR12
+//                  there) — the earlier 5x8/6x10 fixed faces read as too small
+//                  on the 4.7" panel. helvR12_te is already linked for the
+//                  size-8 body face, so this role costs no extra flash.
+//    StatusBold    Helvetica BOLD 12 (Latin Extended). Same size as Status but
+//                  heavier, for the header battery percentage — the regular
+//                  weight read as too light against the panel. helvB12_te is
+//                  already linked (size-8 body bold), so it adds no flash.
 //
 //  Roles, not tables: nothing outside font.cpp references u8g2 font
 //  identifiers directly. Adding/changing a font is a one-file change.
-//
-//  Glyph coverage: UiSmall / UiTiny tables are _tf (ASCII printable only).
-//  Do NOT route translated user-visible strings through them — they will
-//  render missing-glyph boxes for any accent. Use Toast (or Body/Bold) for
-//  anything that could contain a translation.
 // ============================================================================
 namespace Font {
 
@@ -39,8 +41,8 @@ enum class Family : uint8_t { Helvetica = 0, OpenDyslexic = 1 };
 void useBody();
 void useBold();
 void useToast();
-void useUiSmall();
-void useUiTiny();
+void useStatus();
+void useStatusBold();
 
 // Big-display bold (Helvetica B14). Exposed for the Pala apps API's
 // `drawCenteredLarge` — firmware screens use Body/Bold under the

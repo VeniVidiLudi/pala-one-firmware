@@ -2,6 +2,7 @@
 
 #include "src/config.h"
 #include "src/state.h"
+#include "src/hal/orientation.h"          // runtime portrait/landscape
 #include "src/pure/hashing.h"             // prefKeyForBook
 #include "src/storage/book_metadata.h"
 #include "src/storage/page_cache.h"       // deletePageCacheForBook
@@ -14,6 +15,7 @@
 #include "src/storage/wifi_creds.h"
 #include "src/ui/lock.h"
 #include "src/ui/sleep.h"
+#include "src/ui/widgets.h"               // forceNextMenuFrameFull — orientation repaint
 #include "src/web/chrome.h"
 #include "src/ui/screen_settings.h"
 
@@ -94,6 +96,10 @@ static void handleSettings() {
   String famH = (curFam == Font::Family::Helvetica)    ? " selected" : "";
   String famD = (curFam == Font::Family::OpenDyslexic) ? " selected" : "";
 
+  bool curPortrait = Orientation::isPortrait();
+  String orP = curPortrait  ? " selected" : "";
+  String orL = !curPortrait ? " selected" : "";
+
   bool curBionic   = Font::bionicEnabled();
   String bChecked  = curBionic ? " checked" : "";
   bool curHalfGaps = Font::halfParagraphGapsEnabled();
@@ -157,6 +163,10 @@ static void handleSettings() {
     "<option value='2'"; out += lg2; out += ">" D_WEB_LINE_SPACING_2 "</option>"
     "<option value='3'"; out += lg3; out += ">" D_WEB_LINE_SPACING_3 "</option>"
     "</select><div class='hint'>" D_WEB_LINE_SPACING_HINT "</div></div>"
+    "<div><label for='orient'>" D_WEB_ORIENT_LABEL "</label><select id='orient' name='orient'>"
+    "<option value='port'"; out += orP; out += ">" D_WEB_ORIENT_PORTRAIT  "</option>"
+    "<option value='land'"; out += orL; out += ">" D_WEB_ORIENT_LANDSCAPE "</option>"
+    "</select><div class='hint'>" D_WEB_ORIENT_HINT "</div></div>"
     "<div class='full' style='grid-column:1/-1'><label style='display:flex;gap:10px;align-items:center;font-weight:600'>"
     "<input type='checkbox' name='bionic' value='1'"; out += bChecked; out += "><span>" D_WEB_BIONIC_LABEL "</span></label>"
     "<div class='hint'>" D_WEB_BIONIC_HINT "</div></div>"
@@ -233,8 +243,9 @@ static void handleSettings() {
 }
 
 // Apply pending form changes. Returns true if any layout-affecting setting
-// (font size, family, line gap, bionic) was modified — caller uses this to
-// decide whether to remap the reader's byte-offset cursor afterwards.
+// (font size, family, line gap, bionic, orientation) was modified — caller
+// uses this to decide whether to remap the reader's byte-offset cursor
+// afterwards.
 static bool applySettingsForm() {
   bool layoutChanged = false;
 
@@ -256,6 +267,13 @@ static bool applySettingsForm() {
   if (server.hasArg("lgap")) {
     int lg = server.arg("lgap").toInt();
     if (lg != Font::currentLineGap()) { Font::setLineGap(lg); layoutChanged = true; }
+  }
+  if (server.hasArg("orient")) {
+    bool wantPortrait = (server.arg("orient") != "land");
+    if (wantPortrait != Orientation::isPortrait()) {
+      Orientation::set(wantPortrait);   // applies + persists + drops font layout cache
+      layoutChanged = true;
+    }
   }
   // Checkbox is absent from the POST when unchecked.
   bool wantBionic = server.hasArg("bionic");
@@ -308,6 +326,13 @@ static void handleSettingsPost() {
     // Offset is unchanged — no need to rewrite the canonical position.
 
     renderCurrentPage();
+  } else if (layoutChanged && g_currentScreen) {
+    // No reader open, but a menu screen may be up — an orientation change in
+    // particular leaves it drawn for the wrong panel mapping. Repaint it now
+    // (full refresh: the old frame's row metrics no longer apply) so the
+    // device matches the moment the user looks back at it.
+    forceNextMenuFrameFull();
+    g_currentScreen->draw();
   }
 
   // noscr_form is a hidden sentinel always present when the settings form is
@@ -331,8 +356,10 @@ static void handleSettingsPost() {
     }
   }
   if (server.hasArg("hdr")) {
+	Serial.println("Header");
     if (server.hasArg("flip_rot"))
     {
+	Serial.println("Rot true");
       ScreenSettings::setScreenRotation(true);
     }
     else
@@ -358,12 +385,15 @@ static void handleSettingsPost() {
   // POST won't accidentally wipe the stored network via absent fields.
   // A blank SSID forgets the stored network.
   if (server.hasArg("wifi_form")) {
-    String ssid = server.hasArg("wifi_ssid") ? server.arg("wifi_ssid") : "";
+	Serial.println("Wifi section");
+    String ssid = server.hasArg("wssid") ? server.arg("wssid") : "";
     ssid.trim();
     if (ssid.length() == 0) {
+	Serial.println("Clearing");
       WifiCreds::clear();
     } else {
-      WifiCreds::save(ssid, server.hasArg("wifi_pass") ? server.arg("wifi_pass") : "");
+	  Serial.println("Saving");
+      WifiCreds::save(ssid, server.hasArg("wpass") ? server.arg("wpass") : "");
     }
   }
 

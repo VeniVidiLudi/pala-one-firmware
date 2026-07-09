@@ -16,12 +16,10 @@ static void doFactoryReset() {
   resetLibraryNav();
 
   prefs.clear();
-  FS.end();
-  delay(100);
-  FS.format();
-  delay(200);
-  if (!FS.begin(true)) return;
-  ensureBooksDir();
+  // SD build: SDFS has no format(), so wipe the card's contents instead of
+  // reformatting it (and don't tear the mount down — the card stays mounted).
+  // wipeFilesystem() recreates /books for us.
+  wipeFilesystem();
   loadBooks();
 }
 

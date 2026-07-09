@@ -1,6 +1,7 @@
 #include "src/web/screensavers.h"
 
 #include <WiFi.h>   // WiFiClient
+#include <esp_heap_caps.h>
 
 #include "src/config.h"
 #include "src/state.h"
@@ -32,6 +33,18 @@ struct SlotUpload {
 
 SlotUpload s_up;
 
+// A full-panel screensaver is ~64 KB — far too large for the HTTP task stack.
+// The web server is single-threaded, so one shared scratch buffer (lazily
+// PSRAM-allocated, internal-RAM fallback) serves the thumb + download handlers
+// without a giant stack frame. Returns nullptr only if both allocations fail.
+uint8_t* ssScratch() {
+  static uint8_t* p = nullptr;
+  if (!p) p = (uint8_t*)heap_caps_malloc(Screensavers::SCREENSAVER_BYTES,
+                                         MALLOC_CAP_SPIRAM);
+  if (!p) p = (uint8_t*)malloc(Screensavers::SCREENSAVER_BYTES);
+  return p;
+}
+
 }  // namespace
 
 void resetScreensaverUpload() {
@@ -41,7 +54,7 @@ void resetScreensaverUpload() {
 
 // Reverse the bit order of one byte. The XBM/XBitmap format is LSB-first;
 // BMP's monochrome row data is MSB-first. One reverse per byte at thumbnail
-// generation time is plenty cheap for 3904 bytes.
+// generation time is cheap enough for a full-panel image.
 static uint8_t reverseBits8(uint8_t b) {
   b = (uint8_t)(((b & 0xF0) >> 4) | ((b & 0x0F) << 4));
   b = (uint8_t)(((b & 0xCC) >> 2) | ((b & 0x33) << 2));
@@ -50,11 +63,13 @@ static uint8_t reverseBits8(uint8_t b) {
 }
 
 // ============================================================================
-//  GET /screensavers/thumb — render the requested image as a 250x122 BMP.
-//  Used by the slot grid + the "current single image" preview.
+//  GET /screensavers/thumb — render the requested image as a full-panel
+//  (SCREENSAVER_W x SCREENSAVER_H, fixed portrait format) 1-bit BMP. Used by
+//  the slot grid + the "current single image" preview.
 // ============================================================================
 static void handleSleepThumb() {
-  uint8_t buf[Screensavers::SCREENSAVER_BYTES];
+  uint8_t* buf = ssScratch();
+  if (!buf) { server.send(500, "text/plain; charset=utf-8", "Out of memory"); return; }
   bool gotBytes = false;
 
   if (server.hasArg("single")) {
@@ -75,10 +90,15 @@ static void handleSleepThumb() {
   }
 
   // Minimal 1-bit BMP — 14-byte file header, 40-byte info header, 8-byte
-  // 2-color palette, then bottom-up row data (32 bytes per row, MSB-first).
-  const int rowBytes = 32;
+  // 2-color palette, then bottom-up row data (SCREENSAVER_ROW bytes per row,
+  // MSB-first). The XBM row stride is already byte-padded to (W+7)/8, which is
+  // a multiple of 4 for this panel, so it doubles as the BMP's 4-byte-aligned
+  // row stride with no extra padding.
+  const int rowBytes = Screensavers::SCREENSAVER_ROW;
+  const int imgW     = Screensavers::SCREENSAVER_W;
+  const int imgH     = Screensavers::SCREENSAVER_H;
   const int bmpHdr   = 14 + 40 + 8;
-  const int imgBytes = rowBytes * SCREEN_H;
+  const int imgBytes = rowBytes * imgH;
   const int total    = bmpHdr + imgBytes;
 
   uint8_t fileHeader[14] = {
@@ -91,8 +111,8 @@ static void handleSleepThumb() {
   };
   uint8_t infoHeader[40] = {
     40, 0, 0, 0,
-    (uint8_t)(SCREEN_W & 0xFF), (uint8_t)((SCREEN_W >> 8) & 0xFF), 0, 0,
-    (uint8_t)(SCREEN_H & 0xFF), (uint8_t)((SCREEN_H >> 8) & 0xFF), 0, 0,
+    (uint8_t)(imgW & 0xFF), (uint8_t)((imgW >> 8) & 0xFF), 0, 0,
+    (uint8_t)(imgH & 0xFF), (uint8_t)((imgH >> 8) & 0xFF), 0, 0,
     1, 0,
     1, 0,
     0, 0, 0, 0,
@@ -115,7 +135,7 @@ static void handleSleepThumb() {
   client.write(palette,    sizeof(palette));
 
   uint8_t row[rowBytes];
-  for (int y = SCREEN_H - 1; y >= 0; y--) {
+  for (int y = imgH - 1; y >= 0; y--) {
     const uint8_t* src = &buf[y * rowBytes];
     for (int i = 0; i < rowBytes; i++) row[i] = reverseBits8(src[i]);
     client.write(row, rowBytes);
@@ -123,10 +143,12 @@ static void handleSleepThumb() {
 }
 
 // ============================================================================
-//  GET /screensavers/download — serve raw 3904-byte .bin for sharing.
+//  GET /screensavers/download — serve the raw SCREENSAVER_BYTES .bin for
+//  sharing.
 // ============================================================================
 static void handleSleepDownload() {
-  uint8_t buf[Screensavers::SCREENSAVER_BYTES];
+  uint8_t* buf = ssScratch();
+  if (!buf) { server.send(500, "text/plain; charset=utf-8", "Out of memory"); return; }
   bool gotBytes = false;
   String filename = "screensaver.bin";
 
@@ -233,7 +255,8 @@ static void handleScreensaverUploadStream() {
   else if (up.status == UPLOAD_FILE_WRITE) {
     if (s_up.error.length() > 0) return;
     if (s_up.tmpFile && up.currentSize > 0) {
-      if (s_up.tmpFile.size() + up.currentSize > 8192) {
+      if (s_up.tmpFile.size() + up.currentSize >
+          (size_t)Screensavers::SCREENSAVER_BYTES + 1024) {
         s_up.tmpFile.close();
         if (FS.exists(s_up.tmpPath)) FS.remove(s_up.tmpPath);
         s_up.error = "Image file is too large";
@@ -257,8 +280,9 @@ static void handleScreensaverUploadStream() {
     if (sz != (size_t)Screensavers::SCREENSAVER_BYTES) {
       if (FS.exists(s_up.tmpPath)) FS.remove(s_up.tmpPath);
       s_up.error = (sz == 0)
-        ? "Please choose an image first."
-        : "Image must be exactly 3904 bytes";
+        ? String("Please choose an image first.")
+        : String("Image must be exactly ") +
+          Screensavers::SCREENSAVER_BYTES + " bytes";
       s_up.ok = false;
     } else if (s_up.legacy) {
       if (FS.exists("/sleep.bin")) FS.remove("/sleep.bin");
@@ -320,7 +344,7 @@ static const char kEditorStyle[] PROGMEM =
   ".btn-icon:hover{background:var(--line-soft); }"
   ".btn-icon.danger{color:var(--danger);border-color:var(--danger)}"
   ".ss-slot img{width:100%;height:auto;border:1px solid var(--line);border-radius:6px;background:#fff;image-rendering:pixelated}"
-  ".ss-slot .ss-slot-empty{width:100%;aspect-ratio:250/122;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:6px;color:var(--muted);font-size:12px}"
+  ".ss-slot .ss-slot-empty{width:100%;aspect-ratio:540/960;display:flex;align-items:center;justify-content:center;border:1px dashed var(--line);border-radius:6px;color:var(--muted);font-size:12px}"
   "@media(max-width:560px){.ss-grid{grid-template-columns:1fr}}"
   "</style>";
 
@@ -340,7 +364,7 @@ static const char kEditorScript[] PROGMEM =
   "<script>(function(){"
   "if(window.__palaSleepEditorInit)return;"
   "window.__palaSleepEditorInit=1;"
-  "var W=250,H=122,ROW=32,TOTAL=H*ROW;"
+  "var W=540,H=960,ROW=68,TOTAL=H*ROW;"
   "var fileInput=document.getElementById('ssEditFile');"
   "var tol=document.getElementById('ssTolerance');"
   "var tolLbl=document.getElementById('ssToleranceLabel');"
@@ -381,7 +405,7 @@ static const char kEditorScript[] PROGMEM =
   "[tol,zoom,panX,panY,inv].forEach(function(el){el.addEventListener('input',render);el.addEventListener('change',render);});"
   "resetBtn.addEventListener('click',function(){fit();status.textContent='';});"
   "canvas.addEventListener('pointerdown',function(e){pointers[e.pointerId]={x:e.clientX,y:e.clientY};canvas.setPointerCapture(e.pointerId);var p=pts();if(p.length===1){isDragging=true;dragStartX=e.clientX;dragStartY=e.clientY;dragPanX=parseInt(panX.value,10)||0;dragPanY=parseInt(panY.value,10)||0;}startPinch();});"
-  "canvas.addEventListener('pointermove',function(e){if(!pointers[e.pointerId])return;pointers[e.pointerId].x=e.clientX;pointers[e.pointerId].y=e.clientY;var p=pts();if(pinch.active&&p.length===2){var d=Math.max(8,dist(p[0],p[1])),r=d/pinch.startDist;zoom.value=String(clamp(Math.round(pinch.startZoom*r),10,400));var m=mid(p[0],p[1]);panX.value=String(clamp(pinch.startPanX+Math.round(m.x-pinch.startMidX),-250,250));panY.value=String(clamp(pinch.startPanY+Math.round(m.y-pinch.startMidY),-180,180));render();return;}if(isDragging&&p.length===1){panX.value=String(clamp(dragPanX+Math.round(e.clientX-dragStartX),-250,250));panY.value=String(clamp(dragPanY+Math.round(e.clientY-dragStartY),-180,180));render();}});"
+  "canvas.addEventListener('pointermove',function(e){if(!pointers[e.pointerId])return;pointers[e.pointerId].x=e.clientX;pointers[e.pointerId].y=e.clientY;var p=pts();if(pinch.active&&p.length===2){var d=Math.max(8,dist(p[0],p[1])),r=d/pinch.startDist;zoom.value=String(clamp(Math.round(pinch.startZoom*r),10,400));var m=mid(p[0],p[1]);panX.value=String(clamp(pinch.startPanX+Math.round(m.x-pinch.startMidX),-540,540));panY.value=String(clamp(pinch.startPanY+Math.round(m.y-pinch.startMidY),-960,960));render();return;}if(isDragging&&p.length===1){panX.value=String(clamp(dragPanX+Math.round(e.clientX-dragStartX),-540,540));panY.value=String(clamp(dragPanY+Math.round(e.clientY-dragStartY),-960,960));render();}});"
   "function endP(e){delete pointers[e.pointerId];var p=pts();if(p.length===1){isDragging=true;dragStartX=p[0].x;dragStartY=p[0].y;dragPanX=parseInt(panX.value,10)||0;dragPanY=parseInt(panY.value,10)||0;}else isDragging=false;startPinch();}"
   "canvas.addEventListener('pointerup',endP);canvas.addEventListener('pointercancel',endP);"
   "canvas.addEventListener('wheel',function(e){if(!sourceImage)return;e.preventDefault();var z=parseInt(zoom.value,10)||100,s=Math.max(2,Math.round(Math.abs(e.deltaY)/25));zoom.value=String(clamp(z-(e.deltaY>0?s:-s),10,400));render();},{passive:false});"
@@ -480,14 +504,14 @@ static String editorCardHtml(int nextFreeSlot) {
          "<div><div class='ss-label-row'><label for='ssZoom'>" D_WEB_SS_ZOOM "</label><span class='ss-value' id='ssZoomLabel'>100%</span></div>"
          "<input id='ssZoom' type='range' min='10' max='400' value='100'></div>"
          "<div><div class='ss-label-row'><label for='ssPanX'>" D_WEB_SS_MOVE_X "</label><span class='ss-value' id='ssPanXLabel'>0 px</span></div>"
-         "<input id='ssPanX' type='range' min='-250' max='250' value='0'></div>"
+         "<input id='ssPanX' type='range' min='-540' max='540' value='0'></div>"
          "<div class='full'><div class='ss-label-row'><label for='ssPanY'>" D_WEB_SS_MOVE_Y "</label><span class='ss-value' id='ssPanYLabel'>0 px</span></div>"
-         "<input id='ssPanY' type='range' min='-180' max='180' value='0'></div>"
+         "<input id='ssPanY' type='range' min='-960' max='960' value='0'></div>"
          "</div></details></div>"
          "</div>"
          "<div class='ss-card ss-preview-wrap'>"
          "<label>" D_WEB_SS_PREVIEW_LABEL "</label>"
-         "<div class='ss-preview-stage'><canvas id='ssPreview' width='250' height='122'></canvas></div>"
+         "<div class='ss-preview-stage'><canvas id='ssPreview' width='540' height='960'></canvas></div>"
          "<button type='button' class='btn secondary' id='ssResetBtn' style='align-self:flex-start;padding:6px 12px;font-size:13px'>" D_WEB_SS_RESET_FIT "</button>"
          "<div class='ss-meta' id='ssMeta'>" D_WEB_SS_NO_IMAGE "</div>"
          "</div>"

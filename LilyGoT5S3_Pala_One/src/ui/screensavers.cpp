@@ -1,12 +1,26 @@
 #include "src/ui/screensavers.h"
 
 #include <esp_random.h>
+#include <esp_heap_caps.h>
 
 #include "src/config.h"
 #include "src/hal/display.h"   // gfx
 #include "src/state.h"         // FS, prefs
 
 namespace Screensavers {
+
+// A full-panel screensaver bitmap is ~64 KB on the 540x960 panel — too big to
+// sit in .bss as a couple of static arrays. Allocate one shared scratch buffer
+// from PSRAM on first use (falling back to internal RAM). drawNext() is only
+// ever called from the single-threaded sleep path, so sharing one buffer is
+// safe. Returns nullptr if the allocation fails, in which case the caller
+// yields to the built-in icon rather than crashing.
+static uint8_t* scratch() {
+  static uint8_t* p = nullptr;
+  if (!p) p = (uint8_t*)heap_caps_malloc(SCREENSAVER_BYTES, MALLOC_CAP_SPIRAM);
+  if (!p) p = (uint8_t*)malloc(SCREENSAVER_BYTES);
+  return p;
+}
 
 // File-private state. Cached at loadSettings(); mutators below keep both
 // the in-memory copy and the NVS value in sync.
@@ -127,11 +141,12 @@ bool drawNext() {
   if (s_mode == Mode::Single) {
     File sf = FS.open("/sleep.bin", "r");
     if (sf && sf.size() >= (size_t)SCREENSAVER_BYTES) {
-      static uint8_t sleepBuf[SCREENSAVER_BYTES];
+      uint8_t* sleepBuf = scratch();
+      if (!sleepBuf) { sf.close(); return false; }
       sf.read(sleepBuf, SCREENSAVER_BYTES);
       sf.close();
       gfx.fillScreen(1);
-      gfx.drawXBitmap(0, 0, sleepBuf, SCREEN_W, SCREEN_H, 0);
+      gfx.drawXBitmap(0, 0, sleepBuf, SCREENSAVER_W, SCREENSAVER_H, 0);
       return true;
     }
     if (sf) sf.close();
@@ -165,14 +180,15 @@ bool drawNext() {
     prefs.putInt(kKeyCycleIdx, nextIdx);
   }
 
-  static uint8_t buf[SCREENSAVER_BYTES];
+  uint8_t* buf = scratch();
+  if (!buf) return false;
   if (!readSlot(pick, buf)) return false;
 
   s_lastShown = pick;
   prefs.putInt(kKeyLastShown, pick);
 
   gfx.fillScreen(1);
-  gfx.drawXBitmap(0, 0, buf, SCREEN_W, SCREEN_H, 0);
+  gfx.drawXBitmap(0, 0, buf, SCREENSAVER_W, SCREENSAVER_H, 0);
   return true;
 }
 

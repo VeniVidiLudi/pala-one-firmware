@@ -35,6 +35,7 @@
 // that any TU which reaches lang.h before config.h — e.g. via src/web/chrome.h
 // — still gets the fallback. Removing this block re-enables a hard #error
 // when neither LANG_* is set.
+#define LANG_EN
 #if !defined(LANG_EN) && !defined(LANG_ES_LA)
   #pragma message ("No LANG_* selected; defaulting to LANG_EN. Pick LANG_EN or LANG_ES_LA explicitly to silence this.")
   #define LANG_EN

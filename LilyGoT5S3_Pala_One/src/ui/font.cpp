@@ -4,9 +4,10 @@
 #include <U8g2_for_Adafruit_GFX.h>
 
 #include "src/config.h"
-#include "src/hal/display.h"  // u8g2 instance
-#include "src/state.h"        // prefs
-#include "src/ui/statusbar.h" // Statusbar::reserveH
+#include "src/hal/display.h"      // u8g2 instance
+#include "src/hal/orientation.h"  // Orientation::isPortrait — page-cache stamp
+#include "src/state.h"            // prefs
+#include "src/ui/statusbar.h"     // Statusbar::reserveH
 
 // OpenDyslexic u8g2 font tables. Vendored alongside the sketch (see
 // Pala_One_2_1/opendyslexic_u8g2_fonts.h). Only referenced from this file.
@@ -16,13 +17,16 @@ namespace Font {
 
 // File-private font tables. The rest of the codebase only ever sees the
 // role accessors (useBody, useBold, ...).
-static const uint8_t* s_body    = u8g2_font_helvR08_te;
-static const uint8_t* s_bold    = u8g2_font_helvB08_te;
-// _tf = ASCII only. Translated strings must NOT use these — see font.h.
-static const uint8_t* s_uiSmall = u8g2_font_6x10_tf;
-static const uint8_t* s_uiTiny  = u8g2_font_5x8_tf;
-// _te = Latin Extended. Used by toasts so translations with accents render.
+// Pre-loadSettings defaults — overwritten by loadSettings()/applyBodySize() at
+// boot. Sized to the LilyGo "10pt" face (helvR14) so any draw before settings
+// load matches the big-screen mapping below, not the Heltec baseline.
+static const uint8_t* s_body    = u8g2_font_helvR14_te;
+static const uint8_t* s_bold    = u8g2_font_helvB14_te;
+// _te = Latin Extended. Toasts (accents) + the status-bar/battery role,
+// which is helvR12 to match the LilyGo 2.1 sizing. helvR12_te is already
+// linked for the size-8 body face (see pickFaces), so it adds no flash.
 static const uint8_t* s_toast   = u8g2_font_helvR08_te;
+static const uint8_t* s_status  = u8g2_font_helvR12_te;
 
 // Owned settings.
 //   s_size    — body font size (8/10/12/14). Out-of-set values fall back to 10.
@@ -63,12 +67,17 @@ static bool pickFaces(int sz, Family fam,
       default: outBody = u8g2_font_open_dys_r10_te; outBold = u8g2_font_open_dys_b10_te; return false;
     }
   }
+  // LilyGo 4.7" port: the size SETTINGS (8/10/12/14) keep their labels but map
+  // to larger helv faces than the Heltec 2.13" baseline, so body text is sized
+  // for the bigger panel (helvR/B 12/14/18/24). The OpenDyslexic branch above can't follow
+  // — those vendored tables top out at r14 — so dyslexia mode renders a notch
+  // smaller than Helvetica on this build.
   switch (sz) {
-    case 8:  outBody = u8g2_font_helvR08_te; outBold = u8g2_font_helvB08_te; return true;
-    case 10: outBody = u8g2_font_helvR10_te; outBold = u8g2_font_helvB10_te; return true;
-    case 12: outBody = u8g2_font_helvR12_te; outBold = u8g2_font_helvB12_te; return true;
-    case 14: outBody = u8g2_font_helvR14_te; outBold = u8g2_font_helvB14_te; return true;
-    default: outBody = u8g2_font_helvR10_te; outBold = u8g2_font_helvB10_te; return false;
+    case 8:  outBody = u8g2_font_helvR12_te; outBold = u8g2_font_helvB12_te; return true;
+    case 10: outBody = u8g2_font_helvR14_te; outBold = u8g2_font_helvB14_te; return true;
+    case 12: outBody = u8g2_font_helvR18_te; outBold = u8g2_font_helvB18_te; return true;
+    case 14: outBody = u8g2_font_helvR24_te; outBold = u8g2_font_helvB24_te; return true;
+    default: outBody = u8g2_font_helvR14_te; outBold = u8g2_font_helvB14_te; return false;
   }
 }
 
@@ -103,8 +112,8 @@ static void applyLineGap(int gap) {
 void useBody()     { u8g2.setFont(s_body); }
 void useBold()     { u8g2.setFont(s_bold); }
 void useToast()    { u8g2.setFont(s_toast); }
-void useUiSmall()  { u8g2.setFont(s_uiSmall); }
-void useUiTiny()   { u8g2.setFont(s_uiTiny); }
+void useStatus()   { u8g2.setFont(s_status); }
+void useStatusBold(){ u8g2.setFont(u8g2_font_helvB12_te); }
 void useAppLarge() { u8g2.setFont(u8g2_font_helvB14_te); }
 
 const LayoutMetrics& bodyLayout() {
@@ -187,6 +196,7 @@ PageCacheLayout layoutForCache() {
     /*bionic          =*/(uint8_t)(s_bionic ? 1 : 0),
     /*halfGaps        =*/(uint8_t)(s_halfGaps ? 1 : 0),
     /*statusbarReserve=*/(uint8_t)Statusbar::reserveH(),
+    /*orient          =*/(uint8_t)(Orientation::isPortrait() ? 1 : 0),
   };
 }
 

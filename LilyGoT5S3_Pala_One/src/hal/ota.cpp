@@ -19,7 +19,9 @@ static constexpr const char* kOtaBaseUrl =
 // How long to wait for the next data chunk before aborting the download.
 static constexpr uint32_t kDownloadStallMs = 30000;
 
-#if defined(DISPLAY_V1_2)
+#if defined(BOARD_LILYGO_T5_47)
+  static constexpr const char* kBoardToken = "lilygo_t5_47";
+#elif defined(DISPLAY_V1_2)
   static constexpr const char* kBoardToken = "v1_2";
 #else
   static constexpr const char* kBoardToken = "v1_1";

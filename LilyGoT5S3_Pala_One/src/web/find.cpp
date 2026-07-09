@@ -149,6 +149,13 @@ static const char kReadScript[] PROGMEM =
   "elJump=document.getElementById('bvJumpBtn'),elJumpStat=document.getElementById('bvJumpStat');"
   "var rawText='',hits=[],curHit=-1;"
   "function esc(s){return s.replace(/[&<>]/g,function(c){return c==='&'?'&amp;':c==='<'?'&lt;':'&gt;'});}"
+  // The device seeks by BYTE offset into the UTF-8 book file, but a JS string
+  // index is a UTF-16 code-unit count. They only coincide for pure ASCII; any
+  // multi-byte char before a match (smart quotes, em-dashes, accents — all
+  // over real books) makes them diverge, landing the jump in the wrong place.
+  // Convert the match's string index to its UTF-8 byte offset before sending.
+  "var _enc=new TextEncoder();"
+  "function byteOff(ci){return _enc.encode(rawText.slice(0,ci)).length;}"
   "function render(highlight){"
     "if(!highlight){elText.textContent=rawText;return;}"
     "var html='',last=0;"
@@ -167,7 +174,7 @@ static const char kReadScript[] PROGMEM =
     "render(true);"
     "var n=elText.querySelector('.find-cur');"
     "if(n)n.scrollIntoView({block:'center',behavior:'smooth'});"
-    "elStat.textContent='Match '+(curHit+1)+' of '+hits.length+'  (byte '+hits[curHit].start+')';"
+    "elStat.textContent='Match '+(curHit+1)+' of '+hits.length+'  (byte '+byteOff(hits[curHit].start)+')';"
   "}"
   "function search(){"
     "var q=elQ.value;"
@@ -184,7 +191,7 @@ static const char kReadScript[] PROGMEM =
   "elPrev.addEventListener('click',function(){if(hits.length)gotoHit(curHit-1);});"
   "elText.addEventListener('click',function(e){var t=e.target;if(t.classList&&t.classList.contains('find-hit')){var idx=parseInt(t.dataset.i,10);if(!isNaN(idx))gotoHit(idx);}});"
   "elJump.addEventListener('click',function(){if(curHit<0){elJumpStat.textContent='Find something first.';return;}"
-    "var off=hits[curHit].start;var fd=new FormData();fd.append('id',String(bookId));fd.append('offset',String(off));"
+    "var off=byteOff(hits[curHit].start);var fd=new FormData();fd.append('id',String(bookId));fd.append('offset',String(off));"
     "elJumpStat.textContent='Saving...';elJump.disabled=true;"
     "fetch('/jumpoffset',{method:'POST',body:fd,redirect:'follow'}).then(function(r){"
       "elJumpStat.textContent=r.ok?('Saved. Open the book on the device to jump to byte '+off+'.'):('Save failed: HTTP '+r.status);"

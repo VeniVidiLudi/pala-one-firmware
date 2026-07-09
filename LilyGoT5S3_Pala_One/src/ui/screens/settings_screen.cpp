@@ -1,6 +1,7 @@
 #include "src/ui/screens/settings_screen.h"
 
 #include "src/hal/display.h"
+#include "src/hal/orientation.h"
 #include "src/ui/font.h"
 #include "src/ui/screens/library_screen.h" // g_libraryScreen
 #include "src/ui/widgets.h"
@@ -51,19 +52,33 @@ static const SettingOption kGapOptions[] = {
   { 3, D_SETTINGS_GAP_3 },
 };
 
-static int  getSize(void)      { return Font::currentBodySize(); }
-static void setSize(int v)     { Font::setBodySize(v); }
-static int  getFamily(void)    { return (int)Font::currentFamily(); }
-static void setFamily(int v)   { Font::setFamily((Font::Family)v); }
-static int  getLineGap(void)   { return Font::currentLineGap(); }
-static void setLineGap(int v)  { Font::setLineGap(v); }
-static int  getBionic(void)    { return Font::bionicEnabled() ? 1 : 0; }
-static void setBionic(int v)   { Font::setBionic(v != 0); }
+// The web card's option labels (D_WEB_ORIENT_*) are plain text — unlike the
+// font/gap ones with their &mdash; entities — so the device list reuses them
+// rather than minting near-duplicate keys.
+static const SettingOption kOrientOptions[] = {
+  { 1, D_WEB_ORIENT_PORTRAIT  },
+  { 0, D_WEB_ORIENT_LANDSCAPE },
+};
+
+static int  getSize(void)     { return Font::currentBodySize(); }
+static void setSize(int v)    { Font::setBodySize(v); }
+static int  getFamily(void)   { return (int)Font::currentFamily(); }
+static void setFamily(int v)  { Font::setFamily((Font::Family)v); }
+static int  getLineGap(void)  { return Font::currentLineGap(); }
+static void setLineGap(int v) { Font::setLineGap(v); }
+static int  getHalfGaps(void) { return Font::halfParagraphGapsEnabled() ? 1 : 0; }
+static void setHalfGaps(int v){ Font::setHalfParagraphGaps(v != 0); }
+static int  getOrient(void)   { return Orientation::isPortrait() ? 1 : 0; }
+static void setOrient(int v)  { Orientation::set(v != 0); }
+static int  getBionic(void)   { return Font::bionicEnabled() ? 1 : 0; }
+static void setBionic(int v)  { Font::setBionic(v != 0); }
 
 static const SettingItem kItems[] = {
   { D_WEB_FONT_SIZE_LABEL,    kSizeOptions,   4, getSize,     setSize     },
   { D_WEB_FONT_FAMILY_LABEL,  kFamilyOptions, 2, getFamily,   setFamily   },
   { D_WEB_LINE_SPACING_LABEL, kGapOptions,    4, getLineGap,  setLineGap  },
+  { D_WEB_ORIENT_LABEL,       kOrientOptions, 2, getOrient,   setOrient   },
+  { D_WEB_PARA_GAP_LABEL,     nullptr,        0, getHalfGaps, setHalfGaps },
   { D_WEB_BIONIC_LABEL,       nullptr,        0, getBionic,   setBionic   },
 };
 static const int kItemCount = sizeof(kItems) / sizeof(kItems[0]);
@@ -185,8 +200,9 @@ void SettingsScreen::onButton(const ButtonEvent& e) {
     // item's own row (its position shifts when the options disappear).
     it.set(it.options[sel.option].value);
     s_expanded[sel.item] = false;
-    // Size/family/spacing changes alter this menu's own row metrics — force
-    // a full refresh so the old layout doesn't ghost through.
+    // Size/family/spacing changes alter this menu's own row metrics — and an
+    // orientation change swaps the whole panel mapping — so force a full
+    // refresh so the old layout doesn't ghost through.
     forceNextMenuFrameFull();
     buildRows();
     for (int i = 0; i < s_rowCount; i++) {

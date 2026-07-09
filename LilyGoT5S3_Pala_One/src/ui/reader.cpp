@@ -9,6 +9,7 @@
 #include "src/storage/preferences_store.h"
 #include "src/storage/statistics.h"         // Statistics::onReaderPageTurn
 
+#include "src/ui/epub_image.h"              // epubLastPageWasImage — drop status bar on image pages
 #include "src/ui/font.h"                    // layoutForCache for cache stamping
 #include "src/ui/screens/library_screen.h"  // navigateToLibraryRoot — fallback on error
 #include "src/ui/statusbar.h"               // Statusbar::mode for the per-mode statusbar render
@@ -303,11 +304,11 @@ static void drawStatusBar(uint32_t startOffset) {
 
   int pageTextW = 0;
   if (SHOW_PAGE_NUMBER) {
-    Font::useUiTiny();
+    Font::useStatus();
     char buf[20];
     snprintf(buf, sizeof(buf), "%d", g_bookview.cursor.pageIndex + 1);
     pageTextW = u8g2.getUTF8Width(buf);
-    u8g2.setCursor(SCREEN_W - MARGIN_X - pageTextW, SCREEN_H - 1);
+    u8g2.setCursor(SCREEN_W - MARGIN_X - pageTextW, SCREEN_H - 3);
     u8g2.print(buf);
     Font::useBody();
   }
@@ -397,8 +398,11 @@ void renderCurrentPage() {
     appendPageOffset(nextOff);
   }
 
-  if (Toast::isActive()) Toast::draw();
-  else                   drawStatusBar(start);
+  // Image pages fill the screen; a status bar would overlap the artwork and
+  // (on a fast refresh) ghost over it. drawPageAt set the flag if this page
+  // was an image. A toast still wins — it's a transient overlay.
+  if (Toast::isActive())            Toast::draw();
+  else if (!epubLastPageWasImage()) drawStatusBar(start);
 
   display.update();
 }

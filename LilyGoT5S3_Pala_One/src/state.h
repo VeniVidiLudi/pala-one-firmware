@@ -2,37 +2,46 @@
 #define PALA_STATE_H
 
 #include <Arduino.h>
-#include <heltec-eink-modules.h>
+#include "src/hal/epd_backend.h"    // EpdDisplay — pulls in Adafruit_GFX before epd_driver.h
 #include <WebServer.h>
 #include <Preferences.h>
-#include <LittleFS.h>
+#include <SPI.h>
+#include <SD.h>
 
 #include "src/config.h"
 #include "src/pure/paginator.h"     // LayoutMetrics
 
-// Use LittleFS as the project's filesystem. Defined AFTER FS.h has declared
-// `class FS`, so the macro doesn't collide with that class name.
-#define FS LittleFS
+// LilyGo build: storage is a microSD card over SPI, not LittleFS — there's
+// no equivalent on-die flash filesystem partition on this board.
+// `FS` is a bare-token rewrite (defined AFTER SD.h has declared `class FS`,
+// so the macro doesn't collide with that class name). Caveat: this rewrite
+// also mangles any later `fs::FS` *type* reference into `fs::SD` nonsense, so
+// a header declaring `fs::FS&` parameters (e.g. the EPUB importer) that gets
+// included after this line must shield its declaration with
+// `#pragma push_macro("FS") / #undef FS / ... / #pragma pop_macro("FS")` —
+// see storage/epub_import.h, which does exactly that.
+#define FS SD
+
+// microSD over SPI on the LilyGo T5 4.7" S3. The EPD uses a parallel bus, so
+// these SPI pins don't conflict with the panel.
+#define SD_CS    42
+#define SD_MOSI  15
+#define SD_MISO  16
+#define SD_SCLK  11
 
 // ============================================================================
 //  Globals (definitions live in state.cpp)
 // ============================================================================
 extern WebServer server;
 extern Preferences prefs;
+extern SPIClass sdSpi;       // dedicated HSPI bus for the SD card
 
 extern char AP_SSID[24];
 extern const char* AP_PASS;
 
-// Pick the right Heltec display class based on the env-selected build flag.
-// Set in platformio.ini: [env:wireless-paper-v1_2] / [env:wireless-paper-v1_1].
-// The default branch covers IDE IntelliSense (which parses without PIO env
-// flags); real builds always come through pio with one of the flags set.
-#if defined(DISPLAY_V1_1)
-  using EInkDisplay = EInkDisplay_WirelessPaperV1_1;
-#else  // DISPLAY_V1_2 or IntelliSense fallback
-  using EInkDisplay = EInkDisplay_WirelessPaperV1_2;
-#endif
-
-extern EInkDisplay display;
+// EpdDisplay (epd_backend.h) fills the role the Heltec build's
+// EInkDisplay_WirelessPaperV1_x classes fill — see that header for the
+// epdiy-specific framebuffer details.
+extern EpdDisplay display;
 
 #endif  // PALA_STATE_H

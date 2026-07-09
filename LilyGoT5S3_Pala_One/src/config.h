@@ -26,12 +26,23 @@
 // so provide fallbacks so the preprocessor never sees an undefined macro.
 // The Arduino IDE path is for developer iteration — releases go through the
 // PIO + tagged-CI flow, where the real values get injected.
+
+// Manual build tag for the Arduino-IDE dev-flash workflow. PlatformIO/CI
+// injects the real git-derived FW_VERSION / BUILD_GIT_HASH (which override
+// the fallbacks below), but Arduino IDE flashing skips that step — so without
+// a hand-bumped marker every dev build reports the same "dev / unknown" and
+// there's no way to confirm on-device that a new flash actually took.
+// HABIT: bump this on every change you flash. It shows on the library header
+// (front face, via BUILD_GIT_HASH) and the About screen (via FW_VERSION), so
+// a changed value is your proof the new binary is running.
+#define FW_BUILD_TAG "b17"
+
 #ifndef FW_VERSION
-#define FW_VERSION "dev"
+#define FW_VERSION "lilygo-" FW_BUILD_TAG
 #endif
 
 #ifndef BUILD_GIT_HASH
-#define BUILD_GIT_HASH "unknown"
+#define BUILD_GIT_HASH FW_BUILD_TAG
 #endif
 
 // DEBUG_BUILD = 1 shows the git hash in the on-device library screen header
@@ -52,8 +63,21 @@
 // src/lang/lang.h itself — included at the end of this header so every TU
 // that pulls in config.h transitively sees the D_* macros.
 
-static const int SCREEN_W = 250;
-static const int SCREEN_H = 122;
+// LilyGo T5 4.7" S3 (ED047TC1) panel — physically 960x540 (landscape).
+// Orientation is a RUNTIME setting (web settings page; NVS key "cfg_orient",
+// owned by hal/orientation.{h,cpp}). Portrait gives the natural book-page
+// layout and seeds the first boot; landscape uses the panel's native mapping
+// (buttons on the top edge). SCREEN_W/SCREEN_H stay as the names the whole
+// codebase reads — they now alias runtime globals that hal/orientation.cpp
+// swaps on an orientation change.
+#define ORIENTATION_PORTRAIT  0
+#define ORIENTATION_LANDSCAPE 1
+#define ORIENTATION_DEFAULT   ORIENTATION_PORTRAIT
+
+extern int g_screenW;  // 540 in portrait, 960 in landscape
+extern int g_screenH;  // 960 in portrait, 540 in landscape
+#define SCREEN_W g_screenW
+#define SCREEN_H g_screenH
 
 static const uint8_t MAX_BOOKMARKS = 12;
 static const int MAX_BOOKS = 80;
@@ -116,27 +140,46 @@ static const int MENU_FULL_REFRESH_EVERY = 60;
 // unicode inputs.
 static const size_t FILE_STREAM_BUF_BYTES = 512;
 
-static const int MARGIN_X = 6;
-static const int TOP_PAD = 3;
-static const int BOT_PAD = 0;
-static const int STATUS_H = 8;
+// Scaled up from the Heltec panel's 6/0/0/8 for the LilyGo's much higher
+// pixel density (960x540 on a 4.7" panel vs 250x122 on 2.13").
+static const int MARGIN_X = 14;
+static const int TOP_PAD = 4;
+static const int BOT_PAD = 4;
+static const int STATUS_H = 26;
 
 static const bool SHOW_PROGRESS_BAR = true;
 static const bool SHOW_PAGE_NUMBER = true;
 static const bool ENABLE_DEEP_SLEEP = true;
 
-#define BTN 0
+// Board identity marker — distinct from the Heltec build's DISPLAY_V1_1/
+// DISPLAY_V1_2, which no longer get defined at all in this copy. hal/ota.cpp
+// gates its OTA-asset board token on this; without a marker of its own it
+// would silently fall into ota.cpp's "not V1_2" branch and request a Heltec
+// v1.1 firmware image for this board, which is the wrong kind of wrong to
+// get wrong. There's no actual LilyGo release feed behind the OTA base URL
+// yet (that's upstream's hosting, not something this port adds) — this just
+// makes the mismatch a clean "asset not found" instead of a silent, but
+// potentially deadly, one.
+#define BOARD_LILYGO_T5_47 1
+
+// LilyGo T5 4.7" S3 reference pin map (confirm against your exact board
+// revision before flashing). 
+#define BTN 21
 #define HAS_BATTERY 1
 #if HAS_BATTERY
-  #define BAT_ADC_CTRL 19
-  #define BAT_ADC_IN   20
+  // T5 4.7" S3 ties the battery directly to an ADC pin through a 2:1
+  // divider — no separate enable line, so BAT_ADC_CTRL is unused (-1).
+  // hal/battery.cpp and the .ino's setup() both guard on `BAT_ADC_CTRL >= 0`
+  // before touching it.
+  #define BAT_ADC_CTRL (-1)
+  #define BAT_ADC_IN   14
 #endif
 
 // NOTE: `#define FS LittleFS` lives in state.h AFTER all system headers, so it
 // doesn't collide with the `class FS` declared inside Arduino's FS.h.
 
 // Fonts live behind the role API in `ui/font.h` (Font::useBody/useBold/
-// useUiSmall/useUiTiny). No code outside font.cpp references u8g2 font
+// useToast/useStatus). No code outside font.cpp references u8g2 font
 // tables directly.
 
 // Language strings (D_* macros) live in src/lang/. Included here so every

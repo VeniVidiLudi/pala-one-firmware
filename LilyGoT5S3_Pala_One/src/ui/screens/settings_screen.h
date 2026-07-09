@@ -4,9 +4,9 @@
 #include "src/ui/screen.h"
 
 //  SettingsScreen — on-device editor for the layout settings the web
-//  /settings page exposes (font size, font family, line spacing, compact
-//  paragraph gaps, bionic reading). Reached from the library's "Settings"
-//  system entry.
+//  /settings page exposes (font size, font family, line spacing,
+//  compact paragraph gaps, screen orientation, bionic reading).
+//  Reached from the library's "Settings" system entry.
 class SettingsScreen : public Screen {
 public:
   void onEnter() override;

@@ -42,6 +42,7 @@ struct PageCacheLayout {
   uint8_t bionic;            // 0 / 1
   uint8_t halfGaps;          // 0 / 1 - half-height paragraph gaps
   uint8_t statusbarReserve;  // pixels reserved at the bottom; from Statusbar::reserveH()
+  uint8_t orient;            // 1 = portrait, 0 = landscape — swaps line width AND maxLines
 };
 
 // Bulk-load the persisted offset table for `path` into `out`. Layout-stamped

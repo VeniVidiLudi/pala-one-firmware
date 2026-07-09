@@ -11,6 +11,14 @@ static constexpr size_t kLineMax   = 256;
 static constexpr size_t kTokenMax  = 512;
 static constexpr size_t kScratchMax = kLineMax + kTokenMax + 1;
 
+// EPUB image-page marker. Must match EPUB_IMG_SENTINEL in
+// storage/epub_import.h. The converter encodes an image page as a single
+// line: <0x0C><sd-card-path>\n. 0x0C (form feed) never occurs in normal
+// reflowed book text, so treating it as an image marker is safe even for a
+// plain .txt upload. The actual image decode/draw lives in the ui layer
+// (see ui/epub_image.*).
+static constexpr int kImgSentinel = 0x0C;
+
 uint32_t paginatePage(IReadStream& in,
                       uint32_t startPos,
                       const LayoutMetrics& m,
@@ -197,12 +205,46 @@ uint32_t paginatePage(IReadStream& in,
     return 0;
   };
 
+  // Image page at the very start: the whole page is the single sentinel line
+  // <0x0C><path>\n. Emit it raw (sentinel byte included, un-tokenised so the
+  // path survives verbatim) and return just past the newline — an image
+  // always owns a page on its own.
+  {
+    int first = in.read();             // peek-by-read; rewind below if not an image
+    if (first == kImgSentinel) {
+      char img[kLineMax];
+      size_t n = 0;
+      img[n++] = (char)kImgSentinel;
+      while (in.available()) {
+        int rb = in.read();
+        if (rb < 0 || rb == '\n') break;
+        if (rb == '\r') continue;
+        if (n < kLineMax - 1) img[n++] = (char)rb;
+      }
+      img[n] = 0;
+      if (onLine) onLine(img, n);
+      return safeReturn(in.position());
+    }
+    in.seek(startPos);                 // not an image page — rewind and paginate
+  }
+
   while (in.available() && !pageFull()) {
     uint32_t charPos = in.position();
     int rb = in.read();
     if (rb < 0) break;
     char c = (char)rb;
     if (c == '\r') continue;
+
+    // Image sentinel mid-page: end this text page right here so the image
+    // starts fresh on the next page. Flush whatever's pending, then return the
+    // offset AT the sentinel (the next page begins on the image line, handled
+    // by the page-start branch above).
+    if (rb == kImgSentinel) {
+      uint32_t forcedNext = appendTokenToLine();
+      if (forcedNext != 0) return forcedNext;
+      if (lineLen > 0) flushLine();
+      return safeReturn(charPos);
+    }
 
     if (c == '\n') {
       uint32_t forcedNext = appendTokenToLine();

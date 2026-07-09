@@ -5,37 +5,53 @@
 #include <U8g2_for_Adafruit_GFX.h>
 
 #include "src/config.h"
+#include "src/hal/orientation.h"
 #include "src/state.h"
 #include "src/ui/screen_settings.h"
 
 // ============================================================================
-//  Display adapter — wraps the Heltec EInk display so Adafruit_GFX can draw
-//  to it. Rotates the screen 180° because of the panel orientation.
+//  Display adapter — writes Adafruit_GFX draw calls straight into the epdiy
+//  framebuffer (g_canvas, declared in hal/epd_backend.h) via epd_draw_pixel,
+//  rather than going through an EInkDisplay-style object as the Heltec
+//  adapter does.
+//
+//  Rotation follows the runtime orientation (hal/orientation.h): portrait
+//  does a 90° rotation onto the physically-landscape panel; landscape uses
+//  the native mapping.
 // ============================================================================
-class HeltecGFXAdapter : public Adafruit_GFX {
+class EpdGFXAdapter : public Adafruit_GFX {
 public:
-  explicit HeltecGFXAdapter(EInkDisplay& d)
-    : Adafruit_GFX(SCREEN_W, SCREEN_H), disp(d) {}
+  EpdGFXAdapter() : Adafruit_GFX(SCREEN_W, SCREEN_H) {}
 
   void drawPixel(int16_t x, int16_t y, uint16_t color) override {
     if (x < 0 || y < 0 || x >= SCREEN_W || y >= SCREEN_H) return;
-    uint16_t c = color ? BLACK : WHITE;
+    if (!g_canvas) return;
     int16_t xx = (SCREEN_W - 1) - x;
     int16_t yy = (SCREEN_H - 1) - y;
-    if (!ScreenSettings::isScreenFlipped())
-    {
-      disp.drawPixel(xx, yy, c);
+    int16_t px, py;
+    if (Orientation::isPortrait()) {
+	  if (ScreenSettings::isScreenFlipped()) {
+        px = yy;                    // 270° rotation onto the landscape panel
+        py = x;
+	  } else {
+        px = y;                    // 90° rotation onto the landscape panel
+        py = xx;
+	  }
+    } else {
+	  if (ScreenSettings::isScreenFlipped()) {
+        px = xx;                    // 180° rotation on native panel orientation:
+        py = yy;                    // buttons on the bottom edge
+	  } else {
+        px = x;                    // native panel orientation: buttons on the top
+        py = y;                    // edge
+	  }
     }
-    else {
-      disp.drawPixel(x, y, c);
-    }
+    // Adafruit_GFX: color!=0 => ink (black). epdiy: 0=black .. 255=white.
+    epd_draw_pixel(px, py, color ? 0 : 255, g_canvas);
   }
-
-private:
-  EInkDisplay& disp;
 };
 
-extern HeltecGFXAdapter gfx;
+extern EpdGFXAdapter gfx;
 extern U8G2_FOR_ADAFRUIT_GFX u8g2;
 
 // ============================================================================

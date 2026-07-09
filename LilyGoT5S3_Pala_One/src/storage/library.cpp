@@ -57,7 +57,13 @@ static void scanBooksRecursive(const String& absDir, const String& relDir) {
     String absPath = entryName.startsWith("/") ? entryName : (absDir + "/" + entryName);
     String leaf = lastPathComponent(absPath);
 
+    // Skip dotfiles that might have been left by OS.
+    if (leaf.startsWith(".")) { f.close(); f = dir.openNextFile(); continue; }
+
     if (f.isDirectory()) {
+      // "<book>.imgs" dirs hold EPUB images extracted by the converter, not
+      // books — keep them out of the library listing.
+      if (leaf.endsWith(".imgs")) { f.close(); f = dir.openNextFile(); continue; }
       String childRel = relDir.length() ? (relDir + "/" + leaf) : leaf;
       addFolderIfMissing(childRel);
       scanBooksRecursive(absPath, childRel);

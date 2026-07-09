@@ -1,7 +1,7 @@
 #include "src/hal/display.h"
 
 U8G2_FOR_ADAFRUIT_GFX u8g2;
-HeltecGFXAdapter gfx(display);
+EpdGFXAdapter gfx;
 
 // ============================================================================
 //  Drawing primitives

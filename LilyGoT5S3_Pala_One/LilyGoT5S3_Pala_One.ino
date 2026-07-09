@@ -1,32 +1,30 @@
 // ============================================================================
-//  Pala One — firmware entry point.
+//  Pala One — firmware entry point. LilyGo T5 4.7" S3 (ED047TC1) port of the
+//  3.0 architecture.
 //
 //  The real firmware lives under src/ (hal/, pure/, storage/, ui/, web/).
-//  This file exists for two reasons:
-//
-//    1. Arduino IDE requires a .ino with the same name as the sketch folder.
-//    2. It provides a single place for Arduino IDE users to pick the board
-//       revision. PlatformIO users pick the env in platformio.ini instead
-//       and can leave the BOARD_V1_x defines below alone.
+//  This file exists because Arduino IDE requires a .ino with the same name
+//  as the sketch folder.
 //
 //  Build options:
 //
-//    - PlatformIO (recommended):
-//        pio run -e wireless-paper-v1_2 -t upload   # V1.2 panel
-//        pio run -e wireless-paper-v1_1 -t upload   # V1.1 panel
+//    - PlatformIO: no platformio.ini ships in this checkout yet — this port
+//      was done source-level only, without a build/flash pass. Bringing up
+//      a platformio.ini env for this board still needs doing; see lib_deps
+//      below for what it needs to pull in.
 //
 //    - Arduino IDE 2:
-//        1. Install the Heltec ESP32 board package (heltec_wifi_lora_32_V3).
-//        2. Install libraries: heltec-eink-modules (todd-herbert fork),
-//           Adafruit GFX, U8g2_for_Adafruit_GFX.
-//        3. Uncomment exactly one of BOARD_V1_1 / BOARD_V1_2 below.
-//        4. Compile and upload.
+//        1. Install the ESP32 board package, select an ESP32-S3 board
+//           (8MB+ PSRAM enabled — the framebuffers live in PSRAM).
+//        2. Install libraries: LilyGo-EPD47 (epdiy) — IMPORTANT: this
+//           project's epdiy needs a *patched* checkout (see hal/
+//           epd_backend.h's top comment) to coexist with Adafruit_GFX; Adafruit GFX;
+//           U8g2_for_Adafruit_GFX; JPEGDEC library (bitbank2).
+//        3. Compile and upload.
+//
+//  EPUB import is supported as part of upload (storage/
+//  epub_import.h).
 // ============================================================================
-
-// ── Board selection: uncomment the line that matches your hardware ──────────
-// #define BOARD_V1_1
-// #define BOARD_V1_2
-// ────────────────────────────────────────────────────────────────────────────
 
 // ── Language selection: uncomment exactly one (Arduino IDE) ─────────────────
 //   PlatformIO users pick the env in platformio.ini (-en / -es leaf envs)
@@ -46,38 +44,20 @@
 // #define WEB_THEME_DARK
 // ────────────────────────────────────────────────────────────────────────────
 
-// When built with PlatformIO, WIRELESS_PAPER + DISPLAY_V1_x come from
-// build_flags and the BOARD_V1_x macros above stay commented out. When
-// built with Arduino IDE, the macros above drive the same defines so the
-// rest of the firmware sees one consistent set of feature flags.
-#if defined(BOARD_V1_1)
-  #ifndef WIRELESS_PAPER
-    #define WIRELESS_PAPER
-  #endif
-  #ifndef DISPLAY_V1_1
-    #define DISPLAY_V1_1
-  #endif
-#elif defined(BOARD_V1_2)
-  #ifndef WIRELESS_PAPER
-    #define WIRELESS_PAPER
-  #endif
-  #ifndef DISPLAY_V1_2
-    #define DISPLAY_V1_2
-  #endif
-#endif
-
-#if !defined(DISPLAY_V1_1) && !defined(DISPLAY_V1_2)
-  #error "Board not selected. Arduino IDE: uncomment BOARD_V1_1 or BOARD_V1_2 in Pala_One_2_1.ino. PlatformIO: build with -e wireless-paper-v1_1 or -e wireless-paper-v1_2."
-#endif
-
 #include <Arduino.h>
 #include <esp_sleep.h>
+#include <driver/rtc_io.h>          // rtc_gpio_deinit — release BTN from the RTC mux
+#include <soc/sens_struct.h>        // SENS — RTC-IO clock gate rtc_gpio_deinit turns off
+#include <soc/rtc_io_periph.h>      // rtc_io_desc/rtc_io_num_map — b12 diagnostics
+#include <soc/gpio_periph.h>        // GPIO_PIN_MUX_REG — b12 diagnostics
+#include <soc/gpio_struct.h>        // GPIO.pin[] interrupt config — b12 diagnostics
 
 #include "src/config.h"
 #include "src/state.h"
 #include "src/hal/battery.h"
 #include "src/hal/display.h"
 #include "src/hal/input.h"
+#include "src/hal/orientation.h"
 #include "src/hal/wifi_provisioning.h"
 #include "src/pure/hashing.h"
 #include "src/storage/app_catalog.h"
@@ -159,30 +139,70 @@ void setup() {
   Serial.printf("[boot] wake cause: %d\n", esp_sleep_get_wakeup_cause());
   setCpuFrequencyMhz(240); // full speed for init; lowered to 80 MHz at end of setup
 
+  // A prior deep sleep routes BTN to the RTC-IO mux (ui/sleep.cpp's
+  // rtc_gpio_init). A normal deep-sleep WAKE reboots through the ROM path that
+  // releases it, but a USB reflash resets the CPU without clearing the RTC
+  // power domain — so the pad can come up still stranded in the RTC mux.
+  // Deinit first to return the pad to the digital IO mux. Side effect: on the
+  // S3, rtc_gpio_deinit()'s DIGITAL path clears SENS.sar_peri_clk_gate_conf
+  // .iomux_clk_en, the SHARED clock gate for the whole RTC-IO block (esp-idf
+  // issue #12681), so re-open it before the RTC-domain writes below.
+  //
+  // Set the pull-up in the RTC DOMAIN, not just via pinMode. Do it
+  // here too, while the clock gate is open so the writes land.
+  rtc_gpio_deinit((gpio_num_t)BTN);
+  SENS.sar_peri_clk_gate_conf.iomux_clk_en = 1;
+  rtc_gpio_pullup_en((gpio_num_t)BTN);
+  rtc_gpio_pulldown_dis((gpio_num_t)BTN);
   pinMode(BTN, INPUT_PULLUP);
+
+  // display.begin() (epd_init()) MUST come before attachInterrupt(): epdiy
+  // reinstalls the GPIO ISR service internally, wiping any handler attached
+  // earlier. Get this order wrong and the button silently stops generating
+  // edges. See hal/epd_backend.cpp's begin().
+  display.begin();
+  u8g2.begin(gfx);
+
+  // display.begin() re-clears the RTC-IO clock gate,epdiy reconfigures pads
+  // in the RTC-capable 0-21 range and any RTC-mux release re-trips issue #12681.
+  // The pull-up config latched above survives, but light-sleep ext0 wake wants the
+  // block clock running, so re-assert the gate now that epdiy is done.
+  SENS.sar_peri_clk_gate_conf.iomux_clk_en = 1;
+
   attachInterrupt(digitalPinToInterrupt(BTN), btnISR, CHANGE);
 
   // Button held through ext0 wake: its down-edge predates the ISR, so seed
   // the press state manually. Pass 0 (not millis()) to credit the full boot
   // time; millis() ≈ 200 here (after delay(200)) would shorten the hold and
   // misclassify a Long press as Short.
-  if (digitalRead(BTN) == LOW) {
+  //
+  // ONLY on an ext0 wake. On a plain reset or power-on nobody is deliberately
+  // holding the button through a wake — but a pad whose pull-up hasn't taken
+  // effect DOES read LOW here, and unconditionally seeding turned that into a
+  // phantom hold: by the first loop poll the "press" is already older than
+  // VERY_LONG_MS (pressStart=0), a VeryLong gesture fires on a button nobody
+  // touched, and the device locks/sleeps seconds after every RST.
+  if (esp_sleep_get_wakeup_cause() == ESP_SLEEP_WAKEUP_EXT0 &&
+      digitalRead(BTN) == LOW) {
     g_btns.seedPressOnWake(0);
   }
 
-  u8g2.begin(gfx);
-
 #if HAS_BATTERY
   adcSetupOnce();
+#if BAT_ADC_CTRL >= 0
   pinMode(BAT_ADC_CTRL, INPUT);
+#endif
   updateBatteryCached(true);
 #endif
 
-  // Load Sleep and Lock settings early — before display.clear() — so both
-  // flags are available to gate the full-refresh boot clear below.
+  // Load Sleep, Lock and Orientation settings early — before display.clear()
+  // — so the sleep/lock flags are available to gate the full-refresh boot
+  // clear below, and the very first frame renders in the user's chosen
+  // orientation rather than the portrait default.
   prefs.begin("ereader", false);
   Sleep::loadSettings();
   Lock::loadSettings();
+  Orientation::loadSettings();
 
   // Skip the full-refresh boot clear when waking from deep sleep AND either:
   //   (a) the device is locked — the screensaver (with its lock badge) is

@@ -5,11 +5,13 @@
 #include <esp_bt.h>
 #include <esp_sleep.h>
 #include <driver/rtc_io.h>
+#include <Wire.h>                   // Wire.end() — release I2C before deep sleep
 
 #include "src/config.h"
 #include "src/state.h"
 #include "src/hal/display.h"
 #include "src/hal/input.h"          // injectButtonEdgeNow, markUserActivity
+#include "src/hal/orientation.h"    // force portrait around drawSleepScreen
 #include "src/storage/statistics.h" // Statistics::flushToNvs
 #include "src/ui/font.h"            // Font::useToast / Font::useBody
 #include "src/ui/lock.h"            // Lock::isLocked — gates the lock badge
@@ -93,18 +95,68 @@ static void drawLockBadge() {
   gfx.drawPixel(iconX + 4, iconY, 0);
 }
 
+// Nearest-neighbour integer upscale of an XBitmap — Adafruit_GFX::drawXBitmap
+// has no scale parameter. Reads the source bits at their true dimensions (so it
+// never runs off the end of the array, unlike passing a larger w/h to
+// drawXBitmap) and emits a scale×scale block per SET bit; UNSET bits are left
+// transparent, matching drawXBitmap's convention.
+static void drawXBitmapScaled(int16_t x, int16_t y, const unsigned char* bitmap,
+                              int16_t w, int16_t h, uint16_t color, int scale) {
+  const int16_t byteWidth = (w + 7) / 8;
+  for (int16_t j = 0; j < h; j++) {
+    for (int16_t i = 0; i < w; i++) {
+      uint8_t b = pgm_read_byte(&bitmap[j * byteWidth + (i >> 3)]);
+      if (b & (1 << (i & 7))) {
+        gfx.fillRect(x + i * scale, y + j * scale, scale, scale, color);
+      }
+    }
+  }
+}
+
 // Render the screensaver onto the e-ink before powering down. Falls back to
 // the built-in icon if no user-uploaded screensavers are available.
+//
+// Composed in FORCED portrait regardless of the runtime orientation:
+// screensaver slots are a fixed portrait-format file (see screensavers.h),
+// and the fallback icon might as well match so the sleep face is consistent.
+// The live orientation is restored before returning — the next wake's first
+// draw happens in the user's chosen orientation.
 static void drawSleepScreen() {
+  const bool wasPortrait = Orientation::isPortrait();
+  Orientation::applyRuntimeOnly(true);
+
   display.fastmodeOff();
   beginPageCanvas();
 
   if (!Screensavers::drawNext()) {
-    gfx.fillScreen(1);
-    gfx.drawXBitmap(0, 0, pala_one_sleep_black_icon_v4_bits, SCREEN_W, SCREEN_H, 0);
+    // Built-in fallback icon, a 250x122 XBitmap. drawXBitmap can't scale
+    // (passing a larger w/h makes it read past the 3904-byte source and render
+    // garbage), so drawXBitmapScaled() reads the source at its true size and
+    // nearest-neighbour upscales the OUTPUT — safe, and crisp because the
+    // factor is integer. 2x = 500x244, ~93% of the 540-wide panel; 3x would
+    // overflow the width, so 2x is the clean maximum.
+    //
+    // Colour (see hal/display.h): gfx colour 1 = black, 0 = white. The bitmap's
+    // SET bits are its white field and its sparse UNSET bits are the logo, which
+    // the blit leaves transparent. So fill the panel white for a white surround,
+    // then lay a black backing rect under the icon: that makes the transparent
+    // logo pixels read black while the white field blends into the surround — a
+    // clean white sleep screen with the logo centred.
+    const int scale = 2;
+    const int iw = pala_one_sleep_black_icon_v4_width  * scale;
+    const int ih = pala_one_sleep_black_icon_v4_height * scale;
+    const int ix = (SCREEN_W - iw) / 2;
+    const int iy = (SCREEN_H - ih) / 2;
+    gfx.fillScreen(0);                 // white surround
+    gfx.fillRect(ix, iy, iw, ih, 1);   // black backing so the logo stays black
+    drawXBitmapScaled(ix, iy, pala_one_sleep_black_icon_v4_bits,
+                      pala_one_sleep_black_icon_v4_width,
+                      pala_one_sleep_black_icon_v4_height, 0, scale);
   }
   if (Lock::isLocked()) drawLockBadge();
   display.update();
+
+  Orientation::applyRuntimeOnly(wasPortrait);
 }
 
 void enter() {
@@ -152,6 +204,8 @@ void enter() {
   esp_wifi_stop();
   btStop();
 
+  // Board-specific pre-sleep power-down (defined in hal/epd_backend.cpp for
+  // this build: epd_poweroff_all()).
   Platform::prepareToSleep();
   esp_sleep_disable_wakeup_source(ESP_SLEEP_WAKEUP_ALL);
   // INPUT_PULLUP is in the digital IO domain, which powers down in deep sleep.
@@ -170,6 +224,10 @@ void enter() {
   delay(50);
   Serial.printf("[sleep] BTN=%d entering deep sleep\n", digitalRead(BTN));
   Serial.flush();
+
+  // Not ending these components can cause serious sleep drain.
+  Wire.end();
+  Serial.end();
   esp_deep_sleep_start();
 }
 
