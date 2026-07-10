@@ -127,7 +127,9 @@ static void handleSettings() {
 
   // Toggle for setting the inversed screen orientation
   out += "<label style='display:flex;gap:8px;align-items:center;margin-top:10px;cursor:pointer'>";
-  out += "<input type='checkbox' name='flip_rot' value='1' style='width:auto'>";
+  out += "<input type='checkbox' name='flip_rot' value='1' style='width:auto'";
+  out += ScreenSettings::isScreenFlipped() ? " checked" : "";
+  out += ">";
   out += "<span>" D_WEB_FLIP_SCREEN "</span></label>";
   out += "<span class='muted' style='display:inline'>" D_WEB_SETTINGS_APPLY_HINT "</span>";
 
@@ -385,14 +387,11 @@ static void handleSettingsPost() {
   // POST won't accidentally wipe the stored network via absent fields.
   // A blank SSID forgets the stored network.
   if (server.hasArg("wifi_form")) {
-	Serial.println("Wifi section");
     String ssid = server.hasArg("wssid") ? server.arg("wssid") : "";
     ssid.trim();
     if (ssid.length() == 0) {
-	Serial.println("Clearing");
       WifiCreds::clear();
     } else {
-	  Serial.println("Saving");
       WifiCreds::save(ssid, server.hasArg("wpass") ? server.arg("wpass") : "");
     }
   }

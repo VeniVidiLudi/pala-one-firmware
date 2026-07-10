@@ -27,17 +27,17 @@ static void drawConnecting(const String& ssid) {
   Font::useBold();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(D_UPLOAD_CONNECTING);
-  y += 14;
+  y += menuLineH();
 
   Font::useBody();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(ssid.c_str());
-  y += 18;
+  y += menuLineH() + 6;   // section gap
 
   Font::useBody();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(D_UPLOAD_HOTSPOT_HINT_L1);
-  y += 14;
+  y += menuLineH();
   u8g2.setCursor(MARGIN_X, y);
   u8g2.print(D_UPLOAD_HOTSPOT_HINT_L2);
 
@@ -53,22 +53,22 @@ void UploadScreen::draw() {
     Font::useBold();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(D_UPLOAD_CONNECTED);
-    y += 14;
+    y += menuLineH();
 
     Font::useBody();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(net_.staSsid.c_str());
-    y += 18;
+    y += menuLineH() + 6;   // section gap
 
     Font::useBold();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(D_UPLOAD_OPEN);
-    y += 14;
+    y += menuLineH();
 
     Font::useBody();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(net_.primaryUrl.c_str());
-    y += 14;
+    y += menuLineH();
 
     if (net_.fallbackUrl.length() > 0) {
       u8g2.setCursor(MARGIN_X, y);
@@ -78,27 +78,27 @@ void UploadScreen::draw() {
     Font::useBold();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(D_UPLOAD_WIFI);
-    y += 14;
+    y += menuLineH();
 
     Font::useBody();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(net_.apSsid);
-    y += 16;
+    y += menuLineH() + 4;   // small section gap
 
     Font::useBold();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(D_UPLOAD_PASSWORD);
-    y += 14;
+    y += menuLineH();
 
     Font::useBody();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(net_.apPass);
-    y += 16;
+    y += menuLineH() + 4;   // small section gap
 
     Font::useBold();
     u8g2.setCursor(MARGIN_X, y);
     u8g2.print(D_UPLOAD_OPEN);
-    y += 14;
+    y += menuLineH();
 
     Font::useBody();
     u8g2.setCursor(MARGIN_X, y);

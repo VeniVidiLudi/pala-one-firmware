@@ -306,6 +306,9 @@ struct TextSink {
   char    last = '\n';   // start in "newline" state so leading blank space is dropped
   int     nlRun = 2;     // trailing run of '\n' (start at 2 so no leading blank line)
   bool    ok = true;
+  uint8_t pend[2];
+  size_t  pendN = 0;
+
 
   explicit TextSink(File& f) : out(f) {}
   void flush() { if (n) { ok = ok && (out.write(buf, n) == n); n = 0; } }
@@ -314,19 +317,67 @@ struct TextSink {
     last = c; nlRun = (c == '\n') ? nlRun + 1 : 0;
   }
 
-  void ch(char c) {
+  // Whitespace-collapsing emit (post-normalization).
+  void put(char c) {
     if (c == ' ') { if (last == ' ' || last == '\n') return; raw(' '); return; }
     if (c == '\n'){ if (last == '\n') return; raw('\n'); return; }
     raw(c);
   }
+  // Emit a held prefix verbatim. Called before any raw() writer (parBreak,
+  // image sentinel, end of book) so a dangling prefix from truncated UTF-8
+  // can't land after bytes emitted behind its back.
+  void flushPend() {
+    for (size_t k = 0; k < pendN; k++) put((char)pend[k]);
+    pendN = 0;
+  }
+
+  // Normalizing entry point: the same UTF-8 typography mapping as
+  // normalizeTypography() (pure/text_util.cpp — keep in sync), applied
+  // before the whitespace collapse. The reader faces are u8g2 `_te` fonts
+  // whose glyph coverage ends at U+02BD, so literal curly quotes, dashes,
+  // ellipses, NBSPs and BOMs would otherwise be silently skipped at render
+  // — which looks like the converter stripped them.
+  void ch(char cin) {
+    uint8_t c = (uint8_t)cin;
+    if (pendN == 2) {                       // held E2 80 or EF BB
+      pendN = 0;
+      if (pend[0] == 0xE2) {
+        if (c == 0x98 || c == 0x99 || c == 0x9A || c == 0x9B) { put('\''); return; }
+        if (c == 0x9C || c == 0x9D || c == 0x9E || c == 0x9F ||
+            c == 0xB9 || c == 0xBA)                           { put('"');  return; }
+        if (c == 0x93 || c == 0x94 || c == 0x95)              { put('-');  return; }
+        if (c == 0xA6) { put('.'); put('.'); put('.'); return; }
+      } else {                              // EF BB
+        if (c == 0xBF) return;              // BOM / zero-width no-break space
+      }
+      put((char)pend[0]); put((char)pend[1]);
+    } else if (pendN == 1) {                // held C2, E2 or EF
+      pendN = 0;
+      if (pend[0] == 0xC2) {
+        if (c == 0xA0)               { put(' ');  return; }   // NBSP
+        if (c == 0xAB || c == 0xBB)  { put('"');  return; }   // guillemets
+        if (c == 0x91 || c == 0x92)  { put('\''); return; }   // cp1252 leak
+      } else if (c == (pend[0] == 0xE2 ? 0x80 : 0xBB)) {
+        pend[1] = c; pendN = 2; return;
+      }
+      put((char)pend[0]);
+    }
+    if (c == 0xC2 || c == 0xE2 || c == 0xEF) { pend[0] = c; pendN = 1; return; }
+    put((char)c);
+  }
   void str(const char* s) { while (*s) ch(*s++); }
   void str(const String& s) { str(s.c_str()); }
+  // Verbatim string for machine-readable payloads (image sentinel paths):
+  // bypasses normalization AND whitespace collapsing, either of which would
+  // corrupt an SD path containing UTF-8 or doubled spaces.
+  void rawStr(const char* s) { while (*s) raw(*s++); }
   void newline() { ch('\n'); }
   // Paragraph separator: ensure the stream ends with a blank line ("\n\n") so
   // the reader renders vertical space between paragraphs (matching other EPUB
   // converters). Idempotent — adjacent/nested block tags won't stack blanks —
   // and a no-op at the very start so the body doesn't open with a blank line.
   void parBreak() {
+    flushPend();
     if (total == 0) return;
     while (nlRun < 2) raw('\n');
   }
@@ -420,9 +471,10 @@ static void emitImage(const String& tagRaw, TextSink& sink, ImageCtx& ctx) {
     bool wrote = (of.write(idata, isz) == isz);
     of.close();
     if (wrote) {
+      sink.flushPend();
       if (sink.last != '\n') sink.raw('\n');     // sentinel starts its own line
       sink.raw((char)EPUB_IMG_SENTINEL);
-      sink.str(outPath);
+      sink.rawStr(outPath.c_str());
       sink.raw('\n');
       ctx.counter++;
     } else {
@@ -605,6 +657,7 @@ bool epubConvertToTxt(fs::FS& fs, const char* srcPath, const char* dstPath,
     yield();
   }
   g_imgCtx = nullptr;
+  sink.flushPend();
   sink.flush();
   // NB: judge success by bytes the sink wrote, not out.size() — on SDFS the
   // file size isn't updated from buffered writes until flush/close, so reading
