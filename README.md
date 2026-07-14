@@ -11,8 +11,86 @@ There are some unique features added:
 	* This part was 100% vibe coded, expect breakages.
  * Image support.
  
+ The device will need a FAT32 formatted SD card installed to work.
+ 
 # Installation Instructons
-Detailed instructions to follow.
+Instructions are from Arduino IDE, I've never tried Platform IO.
+
+## Board package:
+Espressif ESP32 (arduino-esp32 3.x), board set to an ESP32-S3 variant with the following settings:
+ * USB CDC On Boot: "Enabled"
+ * CPU Frequency: "240MHz (WiFi)"
+ * Core Debug Level: "None"
+ * USB DFU On Boot: "Disabled"
+ * Erase All Flash Before Sketch Upload: "Disabled"
+ * Events Run On: "Core 1"
+ * Flash Mode: "QIO 80MHz"
+ * Flash Size: "16MB (128Mb)"
+ * JTAG Adapter: "Disabled"
+ * Arduino Runs On: "Core 1"
+ * USB Firmware MSC On Boot: "Disabled"
+ * Partition Scheme: "Custom"
+ * PSRAM: "OPI PSRAM"
+ * Upload Mode: "UART0 / Hardware CDC"
+ * Upload Speed: "115200"  
+ * USB Mode: "Hardware CDC and JTAG"  
+ * Zigbee Mode: "Disabled"
+
+## Libraries:
+
+LilyGo-EPD47 (the epdiy v1 fork) — the panel driver; __requires a small manual patch__, see below
+Adafruit GFX Library
+U8g2_for_Adafruit_GFX
+JPEGDEC — EPUB image-page rendering (ui/epub_image.cpp)
+Improv-WiFi-Library (jnthas) — the USB Wi-Fi provisioning wrapped by hal/wifi_provisioning.cpp
+ArduinoJson — OTA manifest parsing (hal/ota.cpp)
+
+## Manual Patch
+LilyGo-EPD47's epd_driver.h and Adafruit's gfxfont.h both define GFXglyph and GFXfont, with different layouts
+and we need both. A vanilla LilyGo-EPD47 checkout therefore won't compile alongside Adafruit_GFX.
+
+The fix has two halves, and both are required:
+
+1) The library patch: in the LilyGo-EPD47 copy, edit src/epd_driver.h to wrap GFXglyph/GFXfont definitions in Adafruit's include guard
+   (#ifndef _GFXFONT_H_), so whichever library is included first "wins" the type definitions. See the example below.
+2) Include order in our code: Adafruit_GFX.h must be pulled in before epd_driver.h, so its _GFXFONT_H_ guard is already set
+   and the (patched) epdiy definitions yield, leaving Adafruit's layout in place. src/hal/epd_backend.h:6-14 enforces this and documents it.
+
+So you want to edit your local copy of LilyGo-EPD47/src/epd_driver.h to have the following:
+
+```cpp
+/* Font data stored PER GLYPH */
+#ifndef _GFXFONT_H_              // ← add
+typedef struct
+{
+    uint8_t width;
+    uint8_t height;
+    uint8_t advance_x;
+    int16_t left;
+    int16_t top;
+    uint16_t compressed_size;
+    uint32_t data_offset;
+} GFXglyph;
+#endif                           // ← add
+
+/* Glyph interval structure — leave as-is */
+typedef struct { ... } UnicodeInterval;
+
+/* Data stored for FONT AS A WHOLE */
+#ifndef _GFXFONT_H_              // ← add
+typedef struct
+{
+    uint8_t         *bitmap;
+    GFXglyph        *glyph;
+    UnicodeInterval *intervals;
+    uint32_t         interval_count;
+    bool             compressed;
+    uint8_t          advance_y;
+    int32_t          ascender;
+    int32_t          descender;
+} GFXfont;
+#endif                           // ← add
+```
 
 # Original Instructions
 What follows is the original instructions for the Pala One. Not all of this applies to the LilyGo, but it is included here for completeness.
