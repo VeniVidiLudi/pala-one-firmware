@@ -95,7 +95,7 @@ static const int PARTIAL_PUSH_DARK_PASSES  = 1;
 static const int PARTIAL_PUSH_WHITE_PASSES = 2;
 static const int PARTIAL_PUSH_TIME         = 40;
 
-static const int FULL_CLEAR_CYCLES = 6;
+static const int FULL_CLEAR_CYCLES = 2;
 static const int FULL_CLEAR_TIME   = 50;
 
 // ============================================================================

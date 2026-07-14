@@ -12,6 +12,7 @@
 
 #include "src/config.h"
 #include "src/storage/wifi_creds.h"
+#include "src/hal/battery.h"
 
 namespace WifiProvisioning {
 
@@ -54,6 +55,7 @@ static constexpr uint32_t kHostActivityMs = 5 * 60 * 1000;
 //
 // Trusting either signal individually catches the failure mode of the other.
 static bool hostPresent() {
+  if (externalPowerWindow()) return true;
   if (HWCDC::isPlugged()) return true;
   return s_state.lastHostByteMs != 0
       && (uint32_t)(millis() - s_state.lastHostByteMs) < kHostActivityMs;

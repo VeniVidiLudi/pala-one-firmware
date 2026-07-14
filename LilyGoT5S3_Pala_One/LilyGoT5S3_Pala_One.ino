@@ -297,6 +297,7 @@ void setup() {
 //  Main loop
 // ============================================================================
 void loop() {
+  pollExternalPower();
   g_btns.poll();
   maybeRecoverFromIsrOverflow();
 
@@ -355,7 +356,7 @@ void loop() {
       if (ev.any()) {
         if (!s_lockedWakePressConsumed) {
           s_lockedWakePressConsumed = true;   // absorb wake press
-        } else {
+        } else  if (!WifiProvisioning::isActive()) {
           Sleep::enter();                     // second tap → back to screensaver
           return;
         }
@@ -364,7 +365,8 @@ void loop() {
       // Don't sleep while the button is held — a Long-press unlock gesture
       // fires on release, so sleeping mid-hold would swallow the gesture.
       if (ENABLE_DEEP_SLEEP && g_currentScreen->allowSleep()
-          && userIdleMs() > 1500 && !g_btns.isPressed()) {
+          && userIdleMs() > 1500 && !g_btns.isPressed()
+          && !WifiProvisioning::isActive()) {
         Sleep::enter();
         return;
       }

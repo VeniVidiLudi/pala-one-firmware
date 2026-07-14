@@ -19,6 +19,9 @@ void drawBatteryTopRight();
 void drawBatteryBottomLeft();
 bool batteryChargingChanged();
 
+void pollExternalPower();    // cheap, self-rate-limited — call every loop pass
+bool externalPowerWindow();  // true ~90s after external power appears
+
 /*
  * True iff the most recent reading is valid and below the low-battery
  * threshold.

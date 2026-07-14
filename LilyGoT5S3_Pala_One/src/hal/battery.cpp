@@ -88,6 +88,31 @@ static float readBatteryVoltageRaw()
   return v;
 }
 
+static float s_pwrFast = 0.0f;
+static float s_pwrSlow = 0.0f;
+static uint32_t s_pwrSampleMs = 0;
+static uint32_t s_pwrAttachMs = 0;
+
+void pollExternalPower() {
+  uint32_t now = millis();
+  if (s_pwrSampleMs != 0 && (uint32_t)(now - s_pwrSampleMs) < 200) return;
+  s_pwrSampleMs = now;
+
+  uint32_t mv = analogReadMilliVolts(BAT_ADC_IN);
+  if (mv < 250) return;  // ADC2 unavailable (WiFi active) or bogus — skip
+  float v = ((float)mv / 1000.0f) * 2.0f * s_battery.calibrationFactor;
+
+  if (s_pwrFast <= 0.0f) { s_pwrFast = s_pwrSlow = v; return; }
+  s_pwrFast += 0.45f * (v - s_pwrFast);  // settles in ~2 samples
+  s_pwrSlow += 0.04f * (v - s_pwrSlow);  // baseline, ~15s to converge
+
+  if (s_pwrFast - s_pwrSlow >= 0.040f) s_pwrAttachMs = now;
+}
+
+bool externalPowerWindow() {
+  return s_pwrAttachMs != 0 && (uint32_t)(millis() - s_pwrAttachMs) < 90000UL;
+}
+
 static int batteryPercentFromOCV(float v)
 {
   struct BatPoint
