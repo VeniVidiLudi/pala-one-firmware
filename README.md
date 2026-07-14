@@ -1,4 +1,4 @@
-<img width="1892" height="1053" alt="palaOne" src="https://github.com/user-attachments/assets/0fdef5ba-eabd-4b71-9a0c-4c1dc78a4bee" />
+<img width="3000" height="4000" alt="20260630_210011" src="https://github.com/user-attachments/assets/76140047-9d04-4805-ab8a-0e0b75526f4c" />
 
 # pala-fourseven-firmware
 This is a fork of the Pala One project by Paul Lagier designed to be run on a [LilyGo T5 S3 4.7" E-paper](https://lilygo.cc/products/t5-4-7-inch-e-paper-v2-3) device.
