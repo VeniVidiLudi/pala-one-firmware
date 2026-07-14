@@ -38,12 +38,12 @@ Espressif ESP32 (arduino-esp32 3.x), board set to an ESP32-S3 variant with the f
 
 ## Libraries:
 
-LilyGo-EPD47 (the epdiy v1 fork) — the panel driver; __requires a small manual patch__, see below
-Adafruit GFX Library
-U8g2_for_Adafruit_GFX
-JPEGDEC — EPUB image-page rendering (ui/epub_image.cpp)
-Improv-WiFi-Library (jnthas) — the USB Wi-Fi provisioning wrapped by hal/wifi_provisioning.cpp
-ArduinoJson — OTA manifest parsing (hal/ota.cpp)
+* LilyGo-EPD47 (the epdiy v1 fork) — the panel driver; __requires a small manual patch__, see below
+* Adafruit GFX Library
+* U8g2_for_Adafruit_GFX
+* JPEGDEC — EPUB image-page rendering (ui/epub_image.cpp)
+* Improv-WiFi-Library (jnthas) — the USB Wi-Fi provisioning wrapped by hal/wifi_provisioning.cpp
+* ArduinoJson — OTA manifest parsing (hal/ota.cpp)
 
 ## Manual Patch
 LilyGo-EPD47's epd_driver.h and Adafruit's gfxfont.h both define GFXglyph and GFXfont, with different layouts
