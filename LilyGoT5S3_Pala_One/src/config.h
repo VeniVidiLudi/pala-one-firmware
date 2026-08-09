@@ -142,10 +142,10 @@ static const size_t FILE_STREAM_BUF_BYTES = 512;
 
 // Scaled up from the Heltec panel's 6/0/0/8 for the LilyGo's much higher
 // pixel density (960x540 on a 4.7" panel vs 250x122 on 2.13").
-static const int MARGIN_X = 14;
-static const int TOP_PAD = 4;
-static const int BOT_PAD = 4;
-static const int STATUS_H = 26;
+static const int MARGIN_X = 10;
+static const int TOP_PAD = 2;
+static const int BOT_PAD = 0;
+static const int STATUS_H = 8;
 
 static const bool SHOW_PROGRESS_BAR = true;
 static const bool SHOW_PAGE_NUMBER = true;

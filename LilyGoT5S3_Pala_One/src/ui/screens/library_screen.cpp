@@ -169,14 +169,14 @@ void LibraryScreen::draw() {
   // appear on screen.
   LibraryEntryType systemEntries[8];
   int systemCount = 0;
-  systemEntries[systemCount++] = LIB_ENTRY_BOOKMARKS;
+  //systemEntries[systemCount++] = LIB_ENTRY_BOOKMARKS;
   systemEntries[systemCount++] = LIB_ENTRY_SETTINGS;
-  if (listHasVisibleItems()) systemEntries[systemCount++] = LIB_ENTRY_LIST;
-  systemEntries[systemCount++] = LIB_ENTRY_APPS;
-  systemEntries[systemCount++] = LIB_ENTRY_STATISTICS;
-  systemEntries[systemCount++] = LIB_ENTRY_ABOUT;
+  //if (listHasVisibleItems()) systemEntries[systemCount++] = LIB_ENTRY_LIST;
+  //systemEntries[systemCount++] = LIB_ENTRY_APPS;
+  //systemEntries[systemCount++] = LIB_ENTRY_STATISTICS;
+  //systemEntries[systemCount++] = LIB_ENTRY_ABOUT;
   systemEntries[systemCount++] = LIB_ENTRY_UPLOAD;
-  systemEntries[systemCount++] = LIB_ENTRY_UPDATE;
+  //systemEntries[systemCount++] = LIB_ENTRY_UPDATE;
 
   // Build the bool[] view that the assembler wants from our name-keyed
   // expansion set, against the current folder ordering.

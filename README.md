@@ -8,7 +8,7 @@ It has been tested on a v2.4 board _without_ Touch functionality. It may work on
 There are some unique features added:
  * Portrait/Landscape switch in the layout settings.
  * In-built ePub -> txt converter.
-	* This part was 100% vibe coded, expect breakages.
+    * This part was 100% vibe coded, expect breakages.
  * Image support.
  
  The device will need a FAT32 formatted SD card installed to work.
